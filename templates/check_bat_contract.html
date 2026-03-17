@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="card" style="max-width: 600px; margin: 0 auto;">
+    <h2>Check BAT contract</h2>
+    <form method="POST">
+        <div class="form-group">
+            <label for="dtr_list">Please enter DTR list to check</label>
+            <textarea id="dtr_list" name="dtr_list" class="form-control" rows="5" required></textarea>
+        </div>
+        <button type="submit" class="btn" style="width: 100%; margin-top: 20px;">Submit</button>
+    </form>
+</div>
+{% endblock %}

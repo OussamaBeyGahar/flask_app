@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="card" style="max-width: 600px; margin: 0 auto;">
+    <h2>Eco Design Report - DMA</h2>
+    <form method="POST">
+        <div class="form-group">
+            <label for="dma_reference">DMA reference</label>
+            <input type="text" id="dma_reference" name="dma_reference" class="form-control" required>
+        </div>
+        <button type="submit" class="btn" style="width: 100%; margin-top: 20px;">Submit</button>
+    </form>
+</div>
+{% endblock %}

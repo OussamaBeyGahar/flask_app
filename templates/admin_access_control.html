@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="card" style="max-width: 1000px;">
+    <h2>Access Control</h2>
+    <form method="GET" style="margin-bottom: 20px; display: flex; gap: 10px;">
+        <input type="text" name="q" placeholder="Search by username or email..." value="{{ request.args.get('q', '') }}"
+            style="padding: 5px; width: 300px;">
+        <button type="submit" class="btn">Search</button>
+        {% if request.args.get('q') %}
+        <a href="{{ url_for('access_control') }}" class="btn"
+            style="background-color: #6c757d; text-decoration: none; display: inline-block; line-height: normal;">Clear</a>
+        {% endif %}
+    </form>
+    <form method="POST">
+        <div class="table-responsive">
+            <table class="table">
+                <thead>
+                    <tr>
+                        <th>User</th>
+                        {% for page in pages %}
+                        <th>{{ page.name }}</th>
+                        {% endfor %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for user in users %}
+                    <tr>
+                        <td>{{ user.username }}</td>
+                        {% for page in pages %}
+                        <td>
+                            <input type="checkbox" name="access_{{ user.id }}_{{ page.id }}" {% if page in user.pages
+                                %}checked{% endif %} {% if user.is_admin %}disabled checked{% endif %}>
+                        </td>
+                        {% endfor %}
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <button type="submit" class="btn" style="margin-top: 20px;">Save Changes</button>
+    </form>
+</div>
+{% endblock %}

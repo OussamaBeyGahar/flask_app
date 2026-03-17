@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="card" style="max-width: 600px; margin: 0 auto;">
+    <h2>Exported3D TCRA</h2>
+    <form method="POST" enctype="multipart/form-data">
+        <div class="form-group">
+            <label for="excel_file">Select Excel File</label>
+            <input type="file" id="excel_file" name="excel_file" class="form-control" accept=".xlsx,.xlsm" required>
+        </div>
+        <button type="submit" class="btn" style="width: 100%; margin-top: 20px;">Submit</button>
+    </form>
+</div>
+{% endblock %}

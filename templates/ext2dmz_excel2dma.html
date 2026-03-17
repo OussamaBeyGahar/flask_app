@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="card" style="max-width: 600px; margin: 0 auto;">
+    <h2>EXT2DMA: EXCEL2DMA</h2>
+    <form method="POST" enctype="multipart/form-data">
+        <div class="form-group">
+            <label for="excel2dma_file">Select File</label>
+            <input type="file" id="excel2dma_file" name="excel2dma_file" class="form-control" required>
+        </div>
+        <button type="submit" class="btn" style="width: 100%; margin-top: 20px;">Submit</button>
+    </form>
+</div>
+{% endblock %}

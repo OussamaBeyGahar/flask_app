@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="card" style="max-width: 600px; margin: 0 auto;">
+    <h2>TCRA Report</h2>
+    <h3 style="margin-bottom: 20px; font-weight: 600;">Delta DMA Cross Check</h3>
+    <form method="POST" enctype="multipart/form-data">
+
+        <div
+            style="margin-top: 20px; margin-bottom: 20px; border-bottom: 1px solid var(--border-color); padding-bottom: 15px;">
+            <strong style="display: block; margin-bottom: 10px;">SOURCE</strong>
+            <p style="margin-bottom: 10px; font-weight: 500; color: var(--label-color);">Reference/revision or TCRA
+                File:</p>
+
+            <div style="display: flex; gap: 20px; margin-bottom: 15px;">
+                <label style="display: flex; align-items: center; gap: 5px;">
+                    <input type="radio" name="source_load_type" value="reference" id="radio_source_reference" checked
+                        onchange="toggleSourceInput()"> Generate TCRA by reference/revision/date
+                </label>
+                <label style="display: flex; align-items: center; gap: 5px;">
+                    <input type="radio" name="source_load_type" value="file" id="radio_source_file"
+                        onchange="toggleSourceInput()"> Load file
+                </label>
+            </div>
+
+            <div id="source_ref_group">
+                <div class="form-group" style="margin-bottom: 10px;">
+                    <label for="source_tcra_reference">Reference/revision Teamcenter:</label>
+                    <input type="text" id="source_tcra_reference" name="source_tcra_reference" class="form-control">
+                </div>
+                <div class="form-group">
+                    <label for="source_tcra_date">Date of TCRA generation:</label>
+                    <!-- Using pattern to enforce dd-mm-yyyy or fallback to a date picker -->
+                    <input type="date" id="source_tcra_date" name="source_tcra_date" class="form-control"
+                        placeholder="dd-mm-yyyy">
+                </div>
+            </div>
+
+            <div class="form-group" id="source_file_group" style="display: none;">
+                <label for="source_tcra_file">Select a TCRA file:</label>
+                <input type="file" id="source_tcra_file" name="source_tcra_file" class="form-control"
+                    accept=".xlsx,.xlsm">
+            </div>
+        </div>
+
+        <div style="margin-bottom: 20px;">
+            <strong style="display: block; margin-bottom: 10px;">DESTINATION</strong>
+            <div class="form-group">
+                <label for="dest_dma_reference">Reference/revision DMA:</label>
+                <input type="text" id="dest_dma_reference" name="dest_dma_reference" class="form-control" required>
+            </div>
+        </div>
+
+        <button type="submit" class="btn" style="width: 100%;">Submit</button>
+    </form>
+</div>
+
+<script>
+    function toggleSourceInput() {
+        const loadRefRadio = document.getElementById('radio_source_reference');
+        const refGroup = document.getElementById('source_ref_group');
+        const refInput = document.getElementById('source_tcra_reference');
+        const dateInput = document.getElementById('source_tcra_date');
+        const fileGroup = document.getElementById('source_file_group');
+        const fileInput = document.getElementById('source_tcra_file');
+
+        if (loadRefRadio.checked) {
+            refGroup.style.display = 'block';
+            refInput.required = true;
+            dateInput.required = true;
+
+            fileGroup.style.display = 'none';
+            fileInput.required = false;
+        } else {
+            refGroup.style.display = 'none';
+            refInput.required = false;
+            dateInput.required = false;
+
+            fileGroup.style.display = 'block';
+            fileInput.required = true;
+        }
+    }
+
+    // Initialize state on load
+    document.addEventListener("DOMContentLoaded", toggleSourceInput);
+</script>
+{% endblock %}

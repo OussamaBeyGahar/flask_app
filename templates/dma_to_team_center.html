@@ -1,0 +1,34 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="card" style="max-width: 600px; margin: 0 auto;">
+    <h2>Import DMA to FastTrack</h2>
+    <form method="POST">
+        <div class="form-group">
+            <label for="dma_reference">DMA reference/revision</label>
+            <input type="text" id="dma_reference" name="dma_reference" class="form-control" required>
+        </div>
+        <div class="form-group" style="margin-top: 15px;">
+            <label>
+                <input type="checkbox" name="skip_teamcenter"> Skip TeamCenter
+            </label>
+        </div>
+        <div class="form-group">
+            <label>
+                <input type="checkbox" name="as_prototype"> As prototype
+            </label>
+        </div>
+        <div class="form-group">
+            <label>
+                <input type="checkbox" name="doc_sep"> Doc Sep
+            </label>
+        </div>
+        <div class="form-group">
+            <label>
+                <input type="checkbox" name="doc_sep_no_relation"> Doc Sep no relation
+            </label>
+        </div>
+        <button type="submit" class="btn" style="width: 100%; margin-top: 20px;">Submit</button>
+    </form>
+</div>
+{% endblock %}

@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="card" style="max-width: 600px; margin: 0 auto;">
+    <h2>DELTA DMA</h2>
+    <form method="POST">
+
+        <div
+            style="margin-top: 20px; margin-bottom: 20px; border-bottom: 1px solid var(--border-color); padding-bottom: 15px;">
+            <strong>DMA Source</strong>
+            <div class="form-group" style="margin-top: 10px;">
+                <label for="source_dma_reference">DMA reference/revision</label>
+                <input type="text" id="source_dma_reference" name="source_dma_reference" class="form-control" required>
+            </div>
+        </div>
+
+        <div style="margin-bottom: 20px;">
+            <strong>DMA destination</strong>
+            <div class="form-group" style="margin-top: 10px;">
+                <label for="destination_dma_reference">DMA reference/revision</label>
+                <input type="text" id="destination_dma_reference" name="destination_dma_reference" class="form-control"
+                    required>
+            </div>
+        </div>
+
+        <button type="submit" class="btn" style="width: 100%;">Submit</button>
+    </form>
+</div>
+{% endblock %}

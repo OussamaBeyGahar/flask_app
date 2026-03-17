@@ -1,0 +1,87 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-md-12">
+        <div class="card" style="max-width: 100%; text-align: left; margin-bottom: 2rem;">
+            <h2>System Settings</h2>
+            <div
+                style="display: flex; justify-content: space-between; align-items: center; padding: 1rem; background: var(--secondary-color); border-radius: 8px; margin-top: 1rem;">
+                <div>
+                    <h4 style="margin-bottom: 0.25rem;">Maintenance Mode</h4>
+                    <p style="margin: 0; color: var(--label-color); font-size: 0.9rem;">When active, non-admin users
+                        will be redirected to a maintenance page.</p>
+                </div>
+                <form action="{{ url_for('toggle_maintenance') }}" method="POST" style="margin: 0;">
+                    <button type="submit"
+                        class="btn {% if maintenance_mode == 'True' %}btn-danger{% else %}btn-success{% endif %}"
+                        style="width: auto;">
+                        {% if maintenance_mode == 'True' %}Disable Maintenance{% else %}Enable Maintenance{% endif %}
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-12">
+        <div class="card" style="max-width: 100%; text-align: left;">
+            <h2>User Management</h2>
+            <div class="table-responsive">
+                <table class="table table-striped">
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>Username</th>
+                            <th>Email</th>
+                            <th>Status</th>
+                            <th>Role</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for user in users %}
+                        <tr>
+                            <td>{{ user.id }}</td>
+                            <td>{{ user.username }}</td>
+                            <td>{{ user.email }}</td>
+                            <td>
+                                {% if user.is_approved %}
+                                <span class="badge bg-success">Approved</span>
+                                {% else %}
+                                <span class="badge bg-warning">Pending</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if user.is_admin %}
+                                <span class="badge bg-primary">Admin</span>
+                                {% else %}
+                                <span class="badge bg-secondary">User</span>
+                                {% endif %}
+                            </td>
+                            <td>
+                                <div class="btn-group" role="group">
+                                    {% if not user.is_approved %}
+                                    <a href="{{ url_for('approve_user', user_id=user.id) }}"
+                                        class="btn btn-sm btn-success">Approve</a>
+                                    {% endif %}
+
+                                    <a href="{{ url_for('toggle_admin', user_id=user.id) }}"
+                                        class="btn btn-sm btn-info">
+                                        {% if user.is_admin %}Revoke Admin{% else %}Make Admin{% endif %}
+                                    </a>
+
+                                    <a href="{{ url_for('delete_user', user_id=user.id) }}"
+                                        class="btn btn-sm btn-danger"
+                                        onclick="return confirm('Are you sure?')">Delete</a>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    {% endblock %}

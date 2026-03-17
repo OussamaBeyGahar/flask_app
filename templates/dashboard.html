@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="card" style="max-width: 600px;">
+    <h2 style="margin-bottom: 1rem; color: var(--primary-color);">Welcome, {{ name }}!</h2>
+    <p style="color: #636e72; margin-bottom: 2rem;">
+        You have successfully logged in to your protected dashboard.
+        This content is only visible to authenticated users.
+    </p>
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+        <div style="padding: 1.5rem; background: var(--secondary-color); border-radius: 8px;">
+            <h3 style="margin-bottom: 0.5rem;">Profile</h3>
+            <p>Manage your account settings</p>
+        </div>
+        <div style="padding: 1.5rem; background: var(--secondary-color); border-radius: 8px;">
+            <h3 style="margin-bottom: 0.5rem;">Settings</h3>
+            <p>Configure your preferences</p>
+        </div>
+    </div>
+</div>
+{% endblock %}

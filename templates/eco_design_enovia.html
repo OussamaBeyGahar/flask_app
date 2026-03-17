@@ -1,0 +1,14 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="card" style="max-width: 600px; margin: 0 auto;">
+    <h2>ECO Design Report ENOVIA</h2>
+    <form method="POST" enctype="multipart/form-data">
+        <div class="form-group">
+            <label for="enovia_file">select the excel files</label>
+            <input type="file" id="enovia_file" name="enovia_file" class="form-control" accept=".xlsx,.xlsm" required>
+        </div>
+        <button type="submit" class="btn" style="width: 100%; margin-top: 20px;">Submit</button>
+    </form>
+</div>
+{% endblock %}

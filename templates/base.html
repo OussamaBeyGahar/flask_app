@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>DmaExportTool</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+
+<body>
+    <nav class="navbar">
+        <a href="{{ url_for('home') }}" class="nav-brand">
+            <img src="{{ url_for('static', filename='logo.png') }}" alt="ALSTOM" style="height: 35px; width: auto;">
+        </a>
+        <div class="nav-links">
+            {% if current_user.is_authenticated %}
+            <a href="{{ url_for('home') }}">Home</a>
+            <div class="dropdown">
+                <a href="#" class="dropbtn">Action</a>
+                <div class="dropdown-content">
+                    <a href="{{ url_for('check_plm_xml') }}">CheckPlmXml</a>
+                    <a href="{{ url_for('check_bat_contract') }}">Check BAT Contract</a>
+                    <a href="{{ url_for('dma_to_team_center') }}">DMA to Team Center</a>
+                    <a href="{{ url_for('plm_report') }}">Plm Report</a>
+                    <div class="dropdown-submenu">
+                        <a href="#">Eco Design</a>
+                        <div class="dropdown-content">
+                            <a href="{{ url_for('eco_design_dma') }}">ECO Desgin Report DMA</a>
+                            <a href="{{ url_for('eco_design_enovia') }}">ECO Design Report ENOVIA</a>
+                        </div>
+                    </div>
+                    <div class="dropdown-submenu">
+                        <a href="#">Exported3D</a>
+                        <div class="dropdown-content">
+                            <a href="{{ url_for('exported3d_dma') }}">DMA</a>
+                            <a href="{{ url_for('exported3d_tcra') }}">TCRA</a>
+                            <a href="{{ url_for('exported3d_report') }}">Report</a>
+                        </div>
+                    </div>
+                    <div class="dropdown-submenu">
+                        <a href="#">EXT2DMZ</a>
+                        <div class="dropdown-content">
+                            <a href="{{ url_for('ext2dmz_neodma') }}">NEODMA</a>
+                            <a href="{{ url_for('ext2dmz_elsa2dma') }}">ELSA2DMA</a>
+                            <a href="{{ url_for('ext2dmz_excel2dma') }}">EXCEL2DMA</a>
+                            <a href="{{ url_for('ext2dmz_elsa2bthtsp') }}">ELSA2BTHTSP</a>
+                        </div>
+                    </div>
+                    <div class="dropdown-submenu">
+                        <a href="#">DELTA</a>
+                        <div class="dropdown-content">
+                            <a href="{{ url_for('delta_dma') }}">DELTA DMA</a>
+                            <a href="{{ url_for('delta_tcra') }}">DELTA TCRA</a>
+                        </div>
+                    </div>
+                    <div class="dropdown-submenu">
+                        <a href="#">TCRA</a>
+                        <div class="dropdown-content">
+                            <a href="{{ url_for('tcra_report') }}">Report</a>
+                            <a href="{{ url_for('tcra_delta_check') }}">DELTA Check</a>
+                            <a href="{{ url_for('tcra_delta_dma_check') }}">DELTA DMA Check</a>
+                            <a href="{{ url_for('tcra_delta_eng_check') }}">DELTA ENG Check</a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="dropdown">
+                <a href="#" class="dropbtn">Request</a>
+                <div class="dropdown-content">
+                    <a href="{{ url_for('request_queued') }}">Queued</a>
+                    <a href="{{ url_for('request_completed') }}">Completed</a>
+                    {% if current_user.is_admin %}
+                    <a href="{{ url_for('request_all_completed') }}">All Completed</a>
+                    {% endif %}
+                    <a href="{{ url_for('request_failed') }}">Failed</a>
+                    <a href="{{ url_for('request_all_failed') }}">All Failed</a>
+                </div>
+            </div>
+            <a href="{{ url_for('dashboard') }}">Dashboard</a>
+            {% if current_user.is_admin %}
+            <a href="{{ url_for('admin_dashboard') }}">Admin</a>
+            <a href="{{ url_for('access_control') }}">Access Control</a>
+            {% endif %}
+            <a href="{{ url_for('logout') }}">Logout</a>
+            {% else %}
+            <a href="{{ url_for('login') }}">Login</a>
+            <a href="{{ url_for('register') }}">Register</a>
+            {% endif %}
+        </div>
+    </nav>
+
+    <div class="container">
+        <div class="flash-messages">
+            {% with messages = get_flashed_messages(with_categories=true) %}
+            {% if messages %}
+            {% for category, message in messages %}
+            <div class="alert {{ category }}">{{ message }}</div>
+            {% endfor %}
+            {% endif %}
+            {% endwith %}
+        </div>
+
+        {% block content %}{% endblock %}
+    </div>
+
+</body>
+
+</html>

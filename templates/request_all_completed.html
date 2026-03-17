@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="card">
+    <h2>All Completed Requests</h2>
+    <p style="color: #636e72; margin-bottom: 1.5rem;">
+        Showing completed jobs for <strong>all users</strong>.
+    </p>
+
+    {% if error %}
+    <p style="color: #d63031;">XML-RPC error: {{ error }}</p>
+    {% elif jobs %}
+    <div style="overflow-x: auto;">
+        <select size="15" id="queue_list" style="width: 100%; font-family: monospace; font-size: 0.85rem; padding: 4px;">
+            {% for item in jobs %}
+            <option>{{ item }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    {% else %}
+    <p style="color: #636e72;">No completed jobs found.</p>
+    {% endif %}
+</div>
+{% endblock %}

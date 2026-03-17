@@ -1,0 +1,24 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="card" style="max-width: 600px; margin: 0 auto;">
+    <h2>Exported3D DMA</h2>
+    <form method="POST">
+        <div class="form-group">
+            <label for="dma_reference">DMA reference/revision</label>
+            <input type="text" id="dma_reference" name="dma_reference" class="form-control" required>
+        </div>
+        <div class="form-group" style="margin-top: 15px;">
+            <label>
+                <input type="checkbox" name="step"> step
+            </label>
+        </div>
+        <div class="form-group">
+            <label>
+                <input type="checkbox" name="thickness"> Thickness
+            </label>
+        </div>
+        <button type="submit" class="btn" style="width: 100%; margin-top: 20px;">Submit</button>
+    </form>
+</div>
+{% endblock %}

@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="card" style="max-width: 600px; margin: 0 auto;">
+    <h2>Check PLM XML</h2>
+    <form method="POST">
+        <div class="form-group">
+            <label for="dma_reference">DMA reference/revision</label>
+            <input type="text" id="dma_reference" name="dma_reference" class="form-control" required>
+        </div>
+        <div class="form-group" style="margin-top: 15px;">
+            <label>
+                <input type="checkbox" name="skip_reference"> Skip reference
+            </label>
+        </div>
+        <div class="form-group">
+            <label>
+                <input type="checkbox" name="skip_teamcenter"> Skip TeamCenter
+            </label>
+        </div>
+        <div class="form-group">
+            <label>
+                <input type="checkbox" name="as_prototype"> As prototype
+            </label>
+        </div>
+        <div class="form-group">
+            <label for="check_level">Check Level</label>
+            <select id="check_level" name="check_level" class="form-control">
+                <option value="all">all</option>
+                <option value="1">1</option>
+                <option value="2">2</option>
+                <option value="3">3</option>
+                <option value="4">4</option>
+            </select>
+        </div>
+        <div class="form-group" style="margin-top: 15px;">
+            <label for="plm_notes">Notes (Optional)</label>
+            <textarea id="plm_notes" name="plm_notes" class="form-control" rows="4"></textarea>
+        </div>
+        <button type="submit" class="btn" style="width: 100%; margin-top: 20px;">Submit</button>
+    </form>
+</div>
+{% endblock %}
