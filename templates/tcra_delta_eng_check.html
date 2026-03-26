@@ -7,15 +7,15 @@
     <form method="POST">
 
         <div style="margin-bottom: 20px; border-bottom: 1px solid var(--border-color); padding-bottom: 15px;">
-            <strong style="display: block; margin-bottom: 10px;">Document Extract Options :</strong>
+            <strong style="display: block; margin-bottom: 10px;">Document Extract Options:</strong>
             <div class="form-group" style="margin-bottom: 5px;">
                 <label>
-                    <input type="checkbox" name="include_specifications"> Include Specifications
+                    <input type="checkbox" name="REP_SPECS" value="YES" checked> Include Specifications
                 </label>
             </div>
             <div class="form-group">
                 <label>
-                    <input type="checkbox" name="include_references"> Include References
+                    <input type="checkbox" name="REP_REFS" value="YES"> Include References
                 </label>
             </div>
         </div>
@@ -23,31 +23,37 @@
         <div style="margin-bottom: 20px; border-bottom: 1px solid var(--border-color); padding-bottom: 15px;">
             <strong style="display: block; margin-bottom: 10px;">SOURCE</strong>
             <div class="form-group" style="margin-bottom: 10px;">
-                <label for="source_tcra_reference">Reference/revision Teamcenter:</label>
-                <input type="text" id="source_tcra_reference" name="source_tcra_reference" class="form-control"
-                    required>
+                <label for="tcReference_from">Reference/revision Teamcenter:</label>
+                <input type="text" id="tcReference_from" name="tcReference_from" class="form-control"
+                    placeholder="e.g. AK00000000000/D" required>
             </div>
             <div class="form-group">
-                <label for="source_tcra_date">Date of TCRA generation:</label>
-                <input type="date" id="source_tcra_date" name="source_tcra_date" class="form-control"
-                    placeholder="dd-mm-yyyy" required>
+                <label for="tcReference_date">Date of TCRA generation:</label>
+                <input type="date" id="tcReference_date" name="tcReference_date" class="form-control" required>
             </div>
         </div>
 
         <div style="margin-bottom: 20px;">
             <strong style="display: block; margin-bottom: 10px;">DESTINATION</strong>
             <div class="form-group" style="margin-bottom: 10px;">
-                <label for="dest_tcra_reference">Reference/revision Teamcenter:</label>
-                <input type="text" id="dest_tcra_reference" name="dest_tcra_reference" class="form-control" required>
+                <label for="tcReference2_from">Reference/revision Teamcenter:</label>
+                <input type="text" id="tcReference2_from" name="tcReference2_from" class="form-control"
+                    placeholder="e.g. AK00000000000/D" required>
             </div>
             <div class="form-group">
-                <label for="dest_tcra_date">Date of TCRA generation:</label>
-                <input type="date" id="dest_tcra_date" name="dest_tcra_date" class="form-control"
-                    placeholder="dd-mm-yyyy" required>
+                <label for="tcReference2_date">Date of TCRA generation:</label>
+                <input type="date" id="tcReference2_date" name="tcReference2_date" class="form-control" required>
             </div>
         </div>
 
         <button type="submit" class="btn" style="width: 100%;">Submit</button>
     </form>
+
+    {% if error %}
+    <div style="margin-top: 1.5rem; padding: 1rem; background: #fff0f0; border-left: 4px solid #d63031; border-radius: 4px;">
+        <strong>Error:</strong>
+        <pre style="margin: 0.5rem 0 0; white-space: pre-wrap; font-size: 0.85rem;">{{ error }}</pre>
+    </div>
+    {% endif %}
 </div>
 {% endblock %}

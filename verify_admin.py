@@ -18,7 +18,7 @@ with app.app_context():
         email='admin@example.com',
         first_name='Admin',
         last_name='User',
-        country='Earth',
+        site_source='BLO', site_destination='BLO',
         password=generate_password_hash('adminpass'),
         is_admin=True,
         is_approved=True
@@ -33,7 +33,7 @@ with app.app_context():
         email='user@example.com',
         first_name='Normal',
         last_name='User',
-        country='Mars',
+        site_source='BLO', site_destination='BLO',
         password=generate_password_hash('userpass'),
         is_approved=False
     )

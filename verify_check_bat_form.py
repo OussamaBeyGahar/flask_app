@@ -9,7 +9,7 @@ def verify_check_bat_form():
         # Ensure Admin exists
         admin = User.query.filter_by(username='admin_bat').first()
         if not admin:
-            admin = User(username='admin_bat', email='admin_bat@test.com', first_name='Admin', last_name='BAT', country='Test', password=generate_password_hash('pass'), is_admin=True, is_approved=True)
+            admin = User(username='admin_bat', email='admin_bat@test.com', first_name='Admin', last_name='BAT', site_source='BLO', site_destination='BLO', password=generate_password_hash('pass'), is_admin=True, is_approved=True)
             db.session.add(admin)
             db.session.commit()
 

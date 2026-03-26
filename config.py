@@ -10,6 +10,17 @@ class Config:
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     PROXY_QUERY = os.environ.get('PROXY_QUERY', 'http://wbel200400203.next.loc:8001/a?b')
     HOST = socket.gethostname()
+    PY_CHECK_BAT_CONTRACT = os.environ.get('PY_CHECK_BAT_CONTRACT', r'\\nasbobcat\bobcat\projects\check_BAT_contract\check_BAT_contract.py')
+    PREPROCESSING_REPORT = os.environ.get('PREPROCESSING_REPORT', r'\\nasbobcat\bobcat\data\PREPROCESSING\REPORT')
+    SHARE_SPOOL = os.environ.get('SHARE_SPOOL', r'\\nasbobcat\bobcat\data\Spool')
+    SHARE_ALTERNATE_WORKING = os.environ.get('SHARE_ALTERNATE_WORKING', r'\\nasbobcat\bobcat\data\AlternateWorking')
+    SHARE_DELTA = os.environ.get('SHARE_DELTA', r'\\nasbobcat\bobcat\data\Delta')
+    SHARE_TCRA_OUT = os.environ.get('SHARE_TCRA_OUT', r'\\nasbobcat\bobcat\data\TCRA_OUT')
+    SHARE_DELTA_TCRA_OUT = os.environ.get('SHARE_DELTA_TCRA_OUT', r'\\nasbobcat\bobcat\data\DeltaTCRA_OUT')
+    SHARE_DELTA_TCRA_DMA_OUT = os.environ.get('SHARE_DELTA_TCRA_DMA_OUT', r'\\nasbobcat\bobcat\data\DeltaTCRA_DMA_OUT')
+    PY_DELTA_4_INDUS = os.environ.get('PY_DELTA_4_INDUS', r'\\nasbobcat\bobcat\projects\delta_4_indus\delta_4_indus.py')
+    SHARE_DELTA_TCRA_ENG_OUT = os.environ.get('SHARE_DELTA_TCRA_ENG_OUT', r'\\nasbobcat\bobcat\data\DeltaTCRA_ENG_OUT')
+    EXE_DELTATCENG = os.environ.get('EXE_DELTATCENG', r'\\nasbobcat\bobcat\projects\deltatceng\deltatceng.exe')
 
 class DevelopmentConfig(Config):
     """Development configuration."""

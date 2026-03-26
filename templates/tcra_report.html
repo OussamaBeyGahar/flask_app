@@ -1,14 +1,151 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="card" style="max-width: 600px; margin: 0 auto;">
+<div class="card" style="max-width: 700px; margin: 0 auto;">
     <h2>TCRA Report</h2>
+
+    {# ── START: enter reference ── #}
+    {% if mode == 'start' %}
     <form method="POST">
+        <input type="hidden" name="mode" value="CHECK_TC">
         <div class="form-group">
-            <label for="tc_reference">TC reference/revision</label>
-            <input type="text" id="tc_reference" name="tc_reference" class="form-control" required>
+            <label for="tcReference">TC reference/revision</label>
+            <input type="text" id="tcReference" name="tcReference" class="form-control"
+                   placeholder="e.g. AK00000000000/D" required>
         </div>
         <button type="submit" class="btn" style="width: 100%; margin-top: 20px;">Submit</button>
     </form>
+
+    {# ── DIR_FOUND: existing report actions ── #}
+    {% elif mode == 'dir_found' %}
+    <p style="margin-bottom: 0.5rem;">
+        <strong>Reference:</strong> {{ reference }}<br>
+        {% if existing_date %}<strong>Created on:</strong> {{ existing_date }}{% endif %}
+    </p>
+    <p style="margin: 1rem 0 0.5rem; color: #555;">An existing report was found. Choose an action:</p>
+
+    <form method="POST" style="display: flex; flex-direction: column; gap: 10px; margin-top: 10px;">
+        <input type="hidden" name="tcReference" value="{{ reference }}">
+        <input type="hidden" name="dir" value="{{ existing_dir }}">
+        <button type="submit" name="mode" value="COMPLETE_REPORTS" class="btn">Complete reports</button>
+        <button type="submit" name="mode" value="REGENERATE" class="btn" style="background: var(--secondary-bg);">Regenerate (new options)</button>
+        <button type="submit" name="mode" value="RELOAD" class="btn" style="background: var(--secondary-bg);">Back to main</button>
+    </form>
+
+    {# ── OPTIONS: new report configuration ── #}
+    {% elif mode == 'options' %}
+    <form method="POST">
+        <input type="hidden" name="mode" value="CREATE_TCRA">
+        <input type="hidden" name="tcReference" value="{{ reference }}">
+
+        <p style="margin-bottom: 1rem;"><strong>Reference:</strong> {{ reference }}</p>
+
+        <div class="form-group">
+            <label for="PROJECT_NAME">Project name</label>
+            <input type="text" id="PROJECT_NAME" name="PROJECT_NAME" class="form-control">
+        </div>
+
+        <div class="form-group" style="margin-top: 1rem;">
+            <label><strong>Subcontractor report</strong></label><br>
+            <label style="margin-right: 1.5rem;">
+                <input type="radio" name="SUBCONTRACTOR" value="NONE" checked> None
+            </label>
+            <label style="margin-right: 1.5rem;">
+                <input type="radio" name="SUBCONTRACTOR" value="FULL"> Full
+            </label>
+            <label>
+                <input type="radio" name="SUBCONTRACTOR" value="PARTIAL"> Partial
+            </label>
+        </div>
+
+        <div class="form-group" style="margin-top: 1rem;">
+            <label><strong>Manufacturing report</strong></label><br>
+            <label>
+                <input type="checkbox" name="REP_MANUFAC" value="TRUE" id="rep_manufac"
+                       onchange="toggleMfg(this)"> Manufacturing report
+            </label>
+            <div id="mfg_options" style="margin-left: 1.5rem; margin-top: 0.5rem; display: none;">
+                <label style="display: block;">
+                    <input type="checkbox" name="TTBOM" value="TRUE"> TTBOM
+                </label>
+                <label style="display: block;">
+                    <input type="checkbox" name="EXPAND_MBOM_BUY_TREE" value="TRUE"> Expand MBOM buy tree
+                </label>
+            </div>
+        </div>
+
+        <div class="form-group" style="margin-top: 1rem;">
+            <label><strong>Tree edit</strong></label><br>
+            <label>
+                <input type="checkbox" name="TREE_EDIT" value="TRUE" id="tree_edit"
+                       onchange="toggleLevel(this)"> Edit nodes tree before report
+            </label>
+            <div id="level_options" style="margin-left: 1.5rem; margin-top: 0.5rem; display: none;">
+                <label style="margin-right: 1.5rem;">
+                    <input type="radio" name="LEVEL_NODES" value="Level1"> Level 1
+                </label>
+                <label>
+                    <input type="radio" name="LEVEL_NODES" value="*" checked> All levels
+                </label>
+            </div>
+        </div>
+
+        <div class="form-group" style="margin-top: 1rem;">
+            <label><strong>Type</strong></label><br>
+            <label style="margin-right: 1.5rem;">
+                <input type="radio" name="SEL_TT_CI" value="TT" checked
+                       onchange="setTT()"> TT
+            </label>
+            <label>
+                <input type="radio" name="SEL_TT_CI" value="CI"
+                       onchange="setCI()"> CI
+            </label>
+        </div>
+
+        <div class="form-group" style="margin-top: 1rem;">
+            <label><strong>Options</strong></label>
+            <div style="margin-top: 0.5rem; display: flex; flex-direction: column; gap: 6px;">
+                <label><input type="checkbox" name="LIST_DOCS" value="TRUE" id="cb_list_docs" checked> List of documents</label>
+                <label><input type="checkbox" name="PART_LIST" value="TRUE" id="cb_part_list" checked> Part list</label>
+                <label><input type="checkbox" name="UNZIP_FILES" value="TRUE" checked> Unzip files</label>
+                <label><input type="checkbox" name="DXF_FOLDER" value="TRUE"> DXF folder</label>
+                <label><input type="checkbox" name="REMOVE_MAKE_BUY" value="TRUE"> Remove MAKE/BUY columns</label>
+                <label><input type="checkbox" name="REMOVE_CI" value="TRUE" id="cb_remove_ci" checked> Remove CI</label>
+                <label><input type="checkbox" name="NO_CLIENT_PLAN" value="TRUE" checked> No client plan</label>
+            </div>
+        </div>
+
+        <button type="submit" class="btn" style="width: 100%; margin-top: 20px;">Create TCRA report</button>
+    </form>
+    {% endif %}
+
+    {% if error %}
+    <div style="margin-top: 1.5rem; padding: 1rem; background: #fff0f0; border-left: 4px solid #d63031; border-radius: 4px;">
+        <strong>Error:</strong>
+        <pre style="margin: 0.5rem 0 0; white-space: pre-wrap; font-size: 0.85rem;">{{ error }}</pre>
+    </div>
+    {% endif %}
 </div>
+
+<script>
+function toggleMfg(cb) {
+    document.getElementById('mfg_options').style.display = cb.checked ? 'block' : 'none';
+}
+function toggleLevel(cb) {
+    document.getElementById('level_options').style.display = cb.checked ? 'block' : 'none';
+}
+function setTT() {
+    document.getElementById('cb_list_docs').disabled = false;
+    document.getElementById('cb_part_list').disabled = false;
+    document.getElementById('cb_remove_ci').disabled = false;
+}
+function setCI() {
+    document.getElementById('cb_list_docs').checked = false;
+    document.getElementById('cb_list_docs').disabled = true;
+    document.getElementById('cb_part_list').checked = false;
+    document.getElementById('cb_part_list').disabled = true;
+    document.getElementById('cb_remove_ci').checked = false;
+    document.getElementById('cb_remove_ci').disabled = true;
+}
+</script>
 {% endblock %}

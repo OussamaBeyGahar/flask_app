@@ -12,7 +12,7 @@ def verify_access_control():
         admin = User.query.filter_by(username='admin_ac').first()
         if not admin:
             admin = User(username='admin_ac', email='admin_ac@test.com', 
-                         first_name='Admin', last_name='User', country='Test',
+                         first_name='Admin', last_name='User', site_source='BLO', site_destination='BLO',
                          password=generate_password_hash('adminpass'),
                          is_admin=True, is_approved=True)
             db.session.add(admin)
@@ -21,7 +21,7 @@ def verify_access_control():
         user = User.query.filter_by(username='user_ac').first()
         if not user:
             user = User(username='user_ac', email='user_ac@test.com',
-                        first_name='Regular', last_name='User', country='Test',
+                        first_name='Regular', last_name='User', site_source='BLO', site_destination='BLO',
                         password=generate_password_hash('userpass'),
                         is_admin=False, is_approved=True)
             db.session.add(user)

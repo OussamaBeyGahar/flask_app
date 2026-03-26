@@ -2,13 +2,32 @@
 
 {% block content %}
 <div class="card" style="max-width: 600px; margin: 0 auto;">
-    <h2>Exported3D TCRA</h2>
+    <h2>Export 3D From TCRA</h2>
     <form method="POST" enctype="multipart/form-data">
         <div class="form-group">
-            <label for="excel_file">Select Excel File</label>
-            <input type="file" id="excel_file" name="excel_file" class="form-control" accept=".xlsx,.xlsm" required>
+            <label for="tcra_file">Select Excel file(s)</label>
+            <input type="file" id="tcra_file" name="tcra_file" class="form-control" multiple required>
+            <small class="form-text text-muted">Multiple files allowed</small>
         </div>
         <button type="submit" class="btn" style="width: 100%; margin-top: 20px;">Submit</button>
     </form>
+
+    {% if results %}
+    <div style="margin-top: 1.5rem;">
+        <strong>Jobs queued:</strong>
+        <ul style="margin-top: 0.5rem;">
+            {% for r in results %}
+            <li>{{ r.filename }} — <a href="{{ r.hyperlink }}">Open report folder</a></li>
+            {% endfor %}
+        </ul>
+    </div>
+    {% endif %}
+
+    {% if error %}
+    <div style="margin-top: 1.5rem; padding: 1rem; background: #fff0f0; border-left: 4px solid #d63031; border-radius: 4px;">
+        <strong>Error:</strong>
+        <pre style="margin: 0.5rem 0 0; white-space: pre-wrap; font-size: 0.85rem;">{{ error }}</pre>
+    </div>
+    {% endif %}
 </div>
 {% endblock %}

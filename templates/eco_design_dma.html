@@ -10,5 +10,12 @@
         </div>
         <button type="submit" class="btn" style="width: 100%; margin-top: 20px;">Submit</button>
     </form>
+
+    {% if error %}
+    <div style="margin-top: 1.5rem; padding: 1rem; background: #fff0f0; border-left: 4px solid #d63031; border-radius: 4px;">
+        <strong>Error:</strong>
+        <pre style="margin: 0.5rem 0 0; white-space: pre-wrap; font-size: 0.85rem;">{{ error }}</pre>
+    </div>
+    {% endif %}
 </div>
 {% endblock %}

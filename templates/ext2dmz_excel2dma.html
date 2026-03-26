@@ -5,10 +5,18 @@
     <h2>EXT2DMA: EXCEL2DMA</h2>
     <form method="POST" enctype="multipart/form-data">
         <div class="form-group">
-            <label for="excel2dma_file">Select File</label>
+            <label for="excel2dma_file">Select Excel file</label>
             <input type="file" id="excel2dma_file" name="excel2dma_file" class="form-control" required>
+            <small class="form-text text-muted">Filename must contain "@" separator (e.g. ref@rev@filename)</small>
         </div>
         <button type="submit" class="btn" style="width: 100%; margin-top: 20px;">Submit</button>
     </form>
+
+    {% if error %}
+    <div style="margin-top: 1.5rem; padding: 1rem; background: #fff0f0; border-left: 4px solid #d63031; border-radius: 4px;">
+        <strong>Error:</strong>
+        <pre style="margin: 0.5rem 0 0; white-space: pre-wrap; font-size: 0.85rem;">{{ error }}</pre>
+    </div>
+    {% endif %}
 </div>
 {% endblock %}

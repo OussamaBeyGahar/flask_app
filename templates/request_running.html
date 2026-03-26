@@ -2,9 +2,9 @@
 
 {% block content %}
 <div class="card">
-    <h2>Failed Requests</h2>
+    <h2>Running Requests</h2>
     <p style="color: #636e72; margin-bottom: 1.5rem;">
-        Showing failed jobs for <strong>{{ current_user.username }}</strong>.
+        Showing running jobs for <strong>{{ current_user.username }}</strong>.
     </p>
 
     {% if error %}
@@ -18,7 +18,7 @@
         </select>
     </div>
     {% else %}
-    <p style="color: #636e72;">No failed jobs found.</p>
+    <p style="color: #636e72;">No running jobs found.</p>
     {% endif %}
 </div>
 <script>setTimeout(() => location.reload(), 60000);</script>

@@ -10,9 +10,9 @@
             style="margin-top: 20px; margin-bottom: 20px; border-bottom: 1px solid var(--border-color); padding-bottom: 15px;">
             <strong style="display: block; margin-bottom: 10px;">SOURCE</strong>
             <div class="form-group">
-                <label for="source_tcra_file">TCRA file: Select a TCRA file:</label>
-                <input type="file" id="source_tcra_file" name="source_tcra_file" class="form-control"
-                    accept=".xlsx,.xlsm" required>
+                <label for="fileTCRA_from">Select a TCRA file:</label>
+                <input type="file" id="fileTCRA_from" name="fileTCRA_from" class="form-control"
+                    accept=".xlsx,.xlsm,.xls" required>
             </div>
         </div>
 
@@ -23,37 +23,45 @@
 
             <div style="display: flex; gap: 20px; margin-bottom: 15px;">
                 <label style="display: flex; align-items: center; gap: 5px;">
-                    <input type="radio" name="dest_load_type" value="file" id="radio_load_file" checked
+                    <input type="radio" name="select_to" value="FILE" id="radio_load_file" checked
                         onchange="toggleDestInput()"> Load file
                 </label>
                 <label style="display: flex; align-items: center; gap: 5px;">
-                    <input type="radio" name="dest_load_type" value="reference" id="radio_load_reference"
+                    <input type="radio" name="select_to" value="REFERENCE" id="radio_load_reference"
                         onchange="toggleDestInput()"> Load by reference
                 </label>
             </div>
 
             <div class="form-group" id="dest_file_group">
-                <label for="dest_tcra_file">Select TCRA File:</label>
-                <input type="file" id="dest_tcra_file" name="dest_tcra_file" class="form-control" accept=".xlsx,.xlsm">
+                <label for="fileTCRA_to">Select TCRA File:</label>
+                <input type="file" id="fileTCRA_to" name="fileTCRA_to" class="form-control" accept=".xlsx,.xlsm,.xls">
             </div>
 
             <div class="form-group" id="dest_ref_group" style="display: none;">
-                <label for="dest_tcra_reference">TCRA reference/revision:</label>
-                <input type="text" id="dest_tcra_reference" name="dest_tcra_reference" class="form-control">
+                <label for="tcReference_to">TCRA reference/revision:</label>
+                <input type="text" id="tcReference_to" name="tcReference_to" class="form-control"
+                    placeholder="e.g. AK00000000000/D">
             </div>
         </div>
 
         <button type="submit" class="btn" style="width: 100%;">Submit</button>
     </form>
+
+    {% if error %}
+    <div style="margin-top: 1.5rem; padding: 1rem; background: #fff0f0; border-left: 4px solid #d63031; border-radius: 4px;">
+        <strong>Error:</strong>
+        <pre style="margin: 0.5rem 0 0; white-space: pre-wrap; font-size: 0.85rem;">{{ error }}</pre>
+    </div>
+    {% endif %}
 </div>
 
 <script>
     function toggleDestInput() {
         const loadFileRadio = document.getElementById('radio_load_file');
         const fileGroup = document.getElementById('dest_file_group');
-        const fileInput = document.getElementById('dest_tcra_file');
+        const fileInput = document.getElementById('fileTCRA_to');
         const refGroup = document.getElementById('dest_ref_group');
-        const refInput = document.getElementById('dest_tcra_reference');
+        const refInput = document.getElementById('tcReference_to');
 
         if (loadFileRadio.checked) {
             fileGroup.style.display = 'block';
@@ -68,7 +76,6 @@
         }
     }
 
-    // Initialize state on load
     document.addEventListener("DOMContentLoaded", toggleDestInput);
 </script>
 {% endblock %}

@@ -9,7 +9,7 @@ def verify_dma_form():
         # Ensure Admin exists
         admin = User.query.filter_by(username='admin_dma').first()
         if not admin:
-            admin = User(username='admin_dma', email='admin_dma@test.com', first_name='Admin', last_name='DMA', country='Test', password=generate_password_hash('pass'), is_admin=True, is_approved=True)
+            admin = User(username='admin_dma', email='admin_dma@test.com', first_name='Admin', last_name='DMA', site_source='BLO', site_destination='BLO', password=generate_password_hash('pass'), is_admin=True, is_approved=True)
             db.session.add(admin)
             db.session.commit()
 

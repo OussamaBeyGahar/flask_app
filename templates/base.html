@@ -70,6 +70,7 @@
                 <a href="#" class="dropbtn">Request</a>
                 <div class="dropdown-content">
                     <a href="{{ url_for('request_queued') }}">Queued</a>
+                    <a href="{{ url_for('request_running') }}">Running</a>
                     <a href="{{ url_for('request_completed') }}">Completed</a>
                     {% if current_user.is_admin %}
                     <a href="{{ url_for('request_all_completed') }}">All Completed</a>

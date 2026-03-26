@@ -5,10 +5,18 @@
     <h2>EXT2DMA : NEO2DMA</h2>
     <form method="POST" enctype="multipart/form-data">
         <div class="form-group">
-            <label for="neodma_file">Select File</label>
-            <input type="file" id="neodma_file" name="neodma_file" class="form-control" required>
+            <label for="neodma_file">Select Neo XML file</label>
+            <input type="file" id="neodma_file" name="neodma_file" class="form-control" accept=".xml" required>
+            <small class="form-text text-muted">PartNumber and HarnessVersion will be extracted from MHBillOfMaterial</small>
         </div>
         <button type="submit" class="btn" style="width: 100%; margin-top: 20px;">Submit</button>
     </form>
+
+    {% if error %}
+    <div style="margin-top: 1.5rem; padding: 1rem; background: #fff0f0; border-left: 4px solid #d63031; border-radius: 4px;">
+        <strong>Error:</strong>
+        <pre style="margin: 0.5rem 0 0; white-space: pre-wrap; font-size: 0.85rem;">{{ error }}</pre>
+    </div>
+    {% endif %}
 </div>
 {% endblock %}

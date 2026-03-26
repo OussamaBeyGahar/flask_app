@@ -10,19 +10,19 @@ def verify_search():
         # Setup Admin
         admin = User.query.filter_by(username='admin_search').first()
         if not admin:
-            admin = User(username='admin_search', email='admin@test.com', first_name='Admin', last_name='User', country='Test', password=generate_password_hash('pass'), is_admin=True, is_approved=True)
+            admin = User(username='admin_search', email='admin@test.com', first_name='Admin', last_name='User', site_source='BLO', site_destination='BLO', password=generate_password_hash('pass'), is_admin=True, is_approved=True)
             db.session.add(admin)
 
         # Setup Target User
         target = User.query.filter_by(username='target_user').first()
         if not target:
-            target = User(username='target_user', email='target@test.com', first_name='Target', last_name='User', country='Test', password=generate_password_hash('pass'), is_approved=True)
+            target = User(username='target_user', email='target@test.com', first_name='Target', last_name='User', site_source='BLO', site_destination='BLO', password=generate_password_hash('pass'), is_approved=True)
             db.session.add(target)
 
         # Setup Other User
         other = User.query.filter_by(username='other_user').first()
         if not other:
-            other = User(username='other_user', email='other@test.com', first_name='Other', last_name='User', country='Test', password=generate_password_hash('pass'), is_approved=True)
+            other = User(username='other_user', email='other@test.com', first_name='Other', last_name='User', site_source='BLO', site_destination='BLO', password=generate_password_hash('pass'), is_approved=True)
             db.session.add(other)
             
         db.session.commit()

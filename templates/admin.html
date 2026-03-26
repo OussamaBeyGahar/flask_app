@@ -72,6 +72,9 @@
                                         {% if user.is_admin %}Revoke Admin{% else %}Make Admin{% endif %}
                                     </a>
 
+                                    <a href="{{ url_for('edit_user', user_id=user.id) }}"
+                                        class="btn btn-sm btn-warning">Edit</a>
+
                                     <a href="{{ url_for('delete_user', user_id=user.id) }}"
                                         class="btn btn-sm btn-danger"
                                         onclick="return confirm('Are you sure?')">Delete</a>

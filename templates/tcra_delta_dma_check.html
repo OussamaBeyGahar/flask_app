@@ -14,74 +14,72 @@
 
             <div style="display: flex; gap: 20px; margin-bottom: 15px;">
                 <label style="display: flex; align-items: center; gap: 5px;">
-                    <input type="radio" name="source_load_type" value="reference" id="radio_source_reference" checked
+                    <input type="radio" name="select_from" value="REFERENCE" id="radio_source_reference" checked
                         onchange="toggleSourceInput()"> Generate TCRA by reference/revision/date
                 </label>
                 <label style="display: flex; align-items: center; gap: 5px;">
-                    <input type="radio" name="source_load_type" value="file" id="radio_source_file"
+                    <input type="radio" name="select_from" value="FILE" id="radio_source_file"
                         onchange="toggleSourceInput()"> Load file
                 </label>
             </div>
 
             <div id="source_ref_group">
                 <div class="form-group" style="margin-bottom: 10px;">
-                    <label for="source_tcra_reference">Reference/revision Teamcenter:</label>
-                    <input type="text" id="source_tcra_reference" name="source_tcra_reference" class="form-control">
+                    <label for="tcReference_from">Reference/revision Teamcenter:</label>
+                    <input type="text" id="tcReference_from" name="tcReference_from" class="form-control"
+                        placeholder="e.g. AK00000000000/D">
                 </div>
                 <div class="form-group">
-                    <label for="source_tcra_date">Date of TCRA generation:</label>
-                    <!-- Using pattern to enforce dd-mm-yyyy or fallback to a date picker -->
-                    <input type="date" id="source_tcra_date" name="source_tcra_date" class="form-control"
-                        placeholder="dd-mm-yyyy">
+                    <label for="tcReference_date">Date of TCRA generation:</label>
+                    <input type="date" id="tcReference_date" name="tcReference_date" class="form-control">
                 </div>
             </div>
 
             <div class="form-group" id="source_file_group" style="display: none;">
-                <label for="source_tcra_file">Select a TCRA file:</label>
-                <input type="file" id="source_tcra_file" name="source_tcra_file" class="form-control"
-                    accept=".xlsx,.xlsm">
+                <label for="fileTCRA_from">Select a TCRA file:</label>
+                <input type="file" id="fileTCRA_from" name="fileTCRA_from" class="form-control"
+                    accept=".xlsx,.xlsm,.xls">
             </div>
         </div>
 
         <div style="margin-bottom: 20px;">
             <strong style="display: block; margin-bottom: 10px;">DESTINATION</strong>
             <div class="form-group">
-                <label for="dest_dma_reference">Reference/revision DMA:</label>
-                <input type="text" id="dest_dma_reference" name="dest_dma_reference" class="form-control" required>
+                <label for="dmaReference_from">Reference/revision DMA:</label>
+                <input type="text" id="dmaReference_from" name="dmaReference_from" class="form-control"
+                    placeholder="e.g. AK00000000000/D" required>
             </div>
         </div>
 
         <button type="submit" class="btn" style="width: 100%;">Submit</button>
     </form>
+
+    {% if error %}
+    <div style="margin-top: 1.5rem; padding: 1rem; background: #fff0f0; border-left: 4px solid #d63031; border-radius: 4px;">
+        <strong>Error:</strong>
+        <pre style="margin: 0.5rem 0 0; white-space: pre-wrap; font-size: 0.85rem;">{{ error }}</pre>
+    </div>
+    {% endif %}
 </div>
 
 <script>
     function toggleSourceInput() {
         const loadRefRadio = document.getElementById('radio_source_reference');
         const refGroup = document.getElementById('source_ref_group');
-        const refInput = document.getElementById('source_tcra_reference');
-        const dateInput = document.getElementById('source_tcra_date');
         const fileGroup = document.getElementById('source_file_group');
-        const fileInput = document.getElementById('source_tcra_file');
+        const fileInput = document.getElementById('fileTCRA_from');
 
         if (loadRefRadio.checked) {
             refGroup.style.display = 'block';
-            refInput.required = true;
-            dateInput.required = true;
-
             fileGroup.style.display = 'none';
             fileInput.required = false;
         } else {
             refGroup.style.display = 'none';
-            refInput.required = false;
-            dateInput.required = false;
-
             fileGroup.style.display = 'block';
             fileInput.required = true;
         }
     }
 
-    // Initialize state on load
     document.addEventListener("DOMContentLoaded", toggleSourceInput);
 </script>
 {% endblock %}

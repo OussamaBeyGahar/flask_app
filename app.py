@@ -1,14 +1,33 @@
-from flask import Flask, render_template, redirect, url_for, request, flash
+from flask import Flask, render_template, redirect, url_for, request, flash, Response
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, login_user, login_required, logout_user, current_user
 from werkzeug.security import generate_password_hash, check_password_hash
 from models import db, User, Page, Setting, Job
 import os
+import sys
+import time
+import subprocess
 import xmlrpc.client
 import xml.etree.ElementTree as ET
+import io
+import re
+import json
 from functools import wraps
 
 from config import config
+
+
+def write_ura_nodes(dst, node, level):
+    """Recursively write URA tree nodes to the structured text file."""
+    tag = node.tag
+    text = node.text or ''
+    if tag == 'R':
+        dst.write(f"{level}:SubReport :{text}\n")
+    else:
+        dst.write(f"{level}:DMA :{text}\n")
+    for child in list(node):
+        write_ura_nodes(dst, child, level + 1)
+
 
 app = Flask(__name__)
 # Load config, default to development
@@ -160,6 +179,25 @@ def delete_user(user_id):
     flash(f'User {user.username} deleted.', 'success')
     return redirect(url_for('admin_dashboard'))
 
+@app.route('/admin/edit/<int:user_id>', methods=['GET', 'POST'])
+@login_required
+@admin_required
+def edit_user(user_id):
+    user = User.query.get_or_404(user_id)
+    if request.method == 'POST':
+        user.first_name = request.form.get('first_name', user.first_name)
+        user.last_name = request.form.get('last_name', user.last_name)
+        user.email = request.form.get('email', user.email)
+        user.site_source = request.form.get('site_source', user.site_source)
+        user.site_destination = request.form.get('site_destination', user.site_destination)
+        new_password = request.form.get('new_password', '').strip()
+        if new_password:
+            user.password = generate_password_hash(new_password)
+        db.session.commit()
+        flash(f'User {user.username} updated.', 'success')
+        return redirect(url_for('admin_dashboard'))
+    return render_template('admin_edit_user.html', user=user)
+
 @app.route('/admin/toggle_admin/<int:user_id>')
 @login_required
 @admin_required
@@ -203,20 +241,22 @@ def register():
         email = request.form.get('email')
         first_name = request.form.get('first_name')
         last_name = request.form.get('last_name')
-        country = request.form.get('country')
+        site_source = request.form.get('site_source')
+        site_destination = request.form.get('site_destination')
         password = request.form.get('password')
-        
+
         user_exists = User.query.filter((User.username == username) | (User.email == email)).first()
         if user_exists:
             flash('Username or Email already exists.', 'error')
             return redirect(url_for('register'))
 
         new_user = User(
-            username=username, 
+            username=username,
             email=email,
             first_name=first_name,
             last_name=last_name,
-            country=country,
+            site_source=site_source,
+            site_destination=site_destination,
             password=generate_password_hash(password),
             is_approved=False
         )
@@ -278,7 +318,7 @@ def check_plm_xml():
         try:
             proxy = xmlrpc.client.ServerProxy(app.config['PROXY_QUERY'])
             uid = current_user.username
-            site = current_user.country
+            site = current_user.site_source
 
             # Validate DMA reference exists on the server
             result = proxy.CHECKDMAREF(uid, dma_ref, dma_rev, app.config['HOST'], "0", option, site)
@@ -324,27 +364,107 @@ def check_plm_xml():
 @login_required
 @check_access
 def check_bat_contract():
+    result = None
+    error = None
     if request.method == 'POST':
-        dtr_list = request.form.get('dtr_list')
-        
-        # Truncate for display if too long
-        display_dtr = (dtr_list[:50] + '...') if len(dtr_list) > 50 else dtr_list
-        flash(f'Form submitted: DTR List={display_dtr}', 'success')
-        return redirect(url_for('check_bat_contract'))
-    return render_template('check_bat_contract.html')
+        dtr_input = request.form.get('dtr_list', '')
+        dtr_inline = dtr_input.replace('\n', ';').replace('\r', '').strip()
+        try:
+            p = subprocess.Popen(
+                [sys.executable, app.config['PY_CHECK_BAT_CONTRACT'], dtr_inline],
+                stdout=subprocess.PIPE, stderr=subprocess.PIPE
+            )
+            stdout, stderr = p.communicate()
+            result = stdout.decode('utf-8', errors='replace')
+            if not result and stderr:
+                error = stderr.decode('utf-8', errors='replace')
+        except Exception as e:
+            error = str(e)
+    return render_template('check_bat_contract.html', result=result, error=error)
 
 @app.route('/dma_to_team_center', methods=['GET', 'POST'])
 @login_required
 @check_access
 def dma_to_team_center():
     if request.method == 'POST':
-        dma_ref = request.form.get('dma_reference')
-        skip_tc = 'skip_teamcenter' in request.form
+        dma_reference = request.form.get('dma_reference', '').strip()
+        skip_tc  = 'skip_teamcenter' in request.form
         as_proto = 'as_prototype' in request.form
-        doc_sep = 'doc_sep' in request.form
-        no_rel = 'doc_sep_no_relation' in request.form
-        
-        flash(f'Form submitted: Ref={dma_ref}, SkipTC={skip_tc}, Proto={as_proto}, Sep={doc_sep}, NoRel={no_rel}', 'success')
+        doc_sep  = 'doc_sep' in request.form
+        no_rel   = 'doc_sep_no_relation' in request.form
+
+        if not dma_reference:
+            flash('DMA reference is required.', 'error')
+            return redirect(url_for('dma_to_team_center'))
+
+        # Build option string — mirrors RequestDmatoPlmXml logic
+        option = "-"
+        if doc_sep:  option = "-DRS-"
+        if no_rel:   option = "-NOREL-"
+        if as_proto: option = "-PROTO-"
+        if skip_tc:  option = "-SFT-"
+        if as_proto and skip_tc:                    option = "-SFT-PROTO-"
+        if as_proto and skip_tc and doc_sep:        option = "-SFT-DRS-PROTO-"
+        if as_proto and skip_tc and no_rel:         option = "-SFT-DRS-NOREL-PROTO-"
+
+        # Parse DMA ref / rev — handle optional #R or #<other> suffix
+        parts = dma_reference.split("/")
+        dma_ref     = parts[0].strip()
+        dma_rev_raw = parts[1].strip() if len(parts) >= 2 else "#"
+
+        if "#" in dma_rev_raw:
+            nobom   = dma_rev_raw.split("#")
+            dma_rev = nobom[0]
+            suffix  = nobom[1] if len(nobom) > 1 else ""
+            if suffix == "R":
+                option = option + "BOMREL-"
+            else:
+                option = option + "NOBOM-"
+        else:
+            dma_rev = dma_rev_raw
+
+        try:
+            proxy = xmlrpc.client.ServerProxy(app.config['PROXY_QUERY'])
+            uid  = current_user.username
+            site = current_user.site_source
+
+            # Validate DMA reference exists
+            result = proxy.CHECKDMAREF(uid, dma_ref, dma_rev, app.config['HOST'], "0", option, site)
+            dmaref, dmavers, dmaminor, dmacoid, dmamaturity = eval(result)
+
+            if str(dmaref) != "None":
+                # Duplicate-queue check
+                existing = Job.query.filter_by(
+                    user_id=current_user.id,
+                    job_type='DMA2PLMXML',
+                    dma_ref=dma_ref,
+                    dma_rev=dma_rev,
+                    status='QUEUED'
+                ).first()
+                if existing:
+                    flash(f'Request already in queue: Ref={dma_ref}, Rev={dma_rev}', 'warning')
+                    return redirect(url_for('dma_to_team_center'))
+
+                proxy.ADMINDMA2PLMXML(uid, dma_ref, dma_rev, request.remote_addr, "0", option, site)
+
+                job = Job(
+                    user_id=current_user.id,
+                    job_type='DMA2PLMXML',
+                    dma_ref=dma_ref,
+                    dma_rev=dma_rev,
+                    option=option,
+                    status='QUEUED'
+                )
+                db.session.add(job)
+                db.session.commit()
+
+                flash(f'DMA2PLMXML job queued: Ref={dma_ref}, Rev={dma_rev}, Options={option}', 'success')
+            else:
+                flash(f'DMA reference not found: {dma_ref}/{dma_rev}', 'error')
+
+        except Exception as e:
+            flash(f'XML-RPC error: {e}', 'error')
+
         return redirect(url_for('dma_to_team_center'))
     return render_template('dma_to_team_center.html')
 
@@ -352,69 +472,154 @@ def dma_to_team_center():
 @login_required
 @check_access
 def plm_report():
+    results = []
+    error = None
     if request.method == 'POST':
-        if 'plm_file' not in request.files:
-            flash('No file part', 'error')
+        files = request.files.getlist('plm_file')
+        if not files or all(f.filename == '' for f in files):
+            flash('No file selected.', 'error')
             return redirect(request.url)
-            
-        file = request.files['plm_file']
-        
-        if file.filename == '':
-            flash('No selected file', 'error')
-            return redirect(request.url)
-            
-        if file and (file.filename.endswith('.xlsx') or file.filename.endswith('.xlsm')):
-            flash(f'File "{file.filename}" uploaded successfully.', 'success')
-            return redirect(url_for('plm_report'))
-        else:
-            flash('Invalid file format. Only .xlsx and .xlsm are allowed.', 'error')
-            return redirect(request.url)
-            
-    return render_template('plm_report.html')
+        try:
+            proxy = xmlrpc.client.ServerProxy(app.config['PROXY_QUERY'])
+            uid = current_user.username
+            for f in files:
+                fn = os.path.basename(f.filename)
+                if not (fn.endswith('.xlsx') or fn.endswith('.xlsm')):
+                    flash(f'Skipped "{fn}": invalid format.', 'warning')
+                    continue
+                dma_ref = time.strftime("%Y%m%d_%H%M%S") + "_PLMREPORT_" + fn
+                dma_rev = "NotUsed"
+                export_file = os.path.normpath(os.path.join(app.config['PREPROCESSING_REPORT'], dma_ref))
+                f.save(export_file)
+                proxy.PLMREPORT(uid, dma_ref, dma_rev, request.remote_addr, "0", "-OptionNotUsed")
+                hyperlink = "file://sacrl1gla2/" + fn[0:3] + "_PLM_Reports/Reports"
+                results.append({'filename': fn, 'hyperlink': hyperlink})
+        except Exception as e:
+            error = str(e)
+    return render_template('plm_report.html', results=results, error=error)
 
 @app.route('/eco_design_dma', methods=['GET', 'POST'])
 @login_required
 @check_access
 def eco_design_dma():
+    error = None
     if request.method == 'POST':
-        dma_ref = request.form.get('dma_reference')
-        flash(f'Form submitted: Ref={dma_ref}', 'success')
-        return redirect(url_for('eco_design_dma'))
-    return render_template('eco_design_dma.html')
+        eco_reference = request.form.get('dma_reference', '').strip()
+        if not eco_reference:
+            flash('DMA reference is required.', 'error')
+            return redirect(url_for('eco_design_dma'))
+        try:
+            ref_rev      = eco_reference.split('/')
+            reference    = ref_rev[0].strip()
+            revision     = ref_rev[1].strip() if len(ref_rev) > 1 else ""
+            ext_revision = '_' + revision if revision else ""
+
+            req_file_name = time.strftime(f"%Y_%m_%d-%H_%M_%S_-ECOREPORT-{reference}{ext_revision}")
+            username  = f"{current_user.first_name} {current_user.last_name}"
+            uid       = current_user.username
+            front_data = {'action': 'ECODESIGN-REPORT', 'language': 'EN', 'name': username}
+            data = f"ECO-<>{uid}<>{reference}<>{revision}<>0<>0<>{front_data}"
+
+            queued_path = os.path.join(app.config['SHARE_SPOOL'], "QUEUED", req_file_name)
+            with open(queued_path, "w") as f:
+                f.write(data)
+
+            flash(f'Eco Design job queued: {reference}/{revision if revision else "#"}', 'success')
+        except Exception as e:
+            error = str(e)
+    return render_template('eco_design_dma.html', error=error)
 
 @app.route('/eco_design_enovia', methods=['GET', 'POST'])
 @login_required
 @check_access
 def eco_design_enovia():
+    error = None
     if request.method == 'POST':
         if 'enovia_file' not in request.files:
-            flash('No file part', 'error')
-            return redirect(request.url)
-            
+            error = 'No file part in request.'
+            return render_template('eco_design_enovia.html', error=error)
+
         file = request.files['enovia_file']
-        
+
         if file.filename == '':
-            flash('No selected file', 'error')
-            return redirect(request.url)
-            
-        if file and (file.filename.endswith('.xlsx') or file.filename.endswith('.xlsm')):
-            flash(f'File "{file.filename}" uploaded successfully.', 'success')
+            error = 'No file selected.'
+            return render_template('eco_design_enovia.html', error=error)
+
+        fn = os.path.basename(file.filename)
+        if not (fn.endswith('.xlsx') or fn.endswith('.xlsm')):
+            error = 'Invalid file format. Only .xlsx and .xlsm are allowed.'
+            return render_template('eco_design_enovia.html', error=error)
+
+        try:
+            fn_noext = os.path.splitext(fn)[0]
+            req_file_name = time.strftime(f"%Y_%m_%d-%H_%M_%S_-ECOREPORT-ENOVIA_{fn_noext}")
+
+            # Save uploaded file to SHARE_ALTERNATE_WORKING
+            dest_dir = os.path.join(app.config['SHARE_ALTERNATE_WORKING'], req_file_name)
+            os.makedirs(dest_dir, exist_ok=True)
+            enovia_file_path = os.path.join(dest_dir, fn)
+            file.save(enovia_file_path)
+
+            # Write spool token file
+            uid = current_user.username
+            username = f"{current_user.first_name} {current_user.last_name}"
+            front_data = {'action': 'ECODESIGN-REPORT-ENOVIA', 'language': 'EN', 'name': username, 'enovia_file': enovia_file_path}
+            data = f"ECO-<>{uid}<><><>0<>0<>{front_data}"
+
+            queued_path = os.path.join(app.config['SHARE_SPOOL'], "QUEUED", req_file_name)
+            with open(queued_path, "w") as f:
+                f.write(data)
+
+            flash(f'Eco Design Enovia job queued: {fn}', 'success')
             return redirect(url_for('eco_design_enovia'))
-        else:
-            flash('Invalid file format. Only .xlsx and .xlsm are allowed.', 'error')
-            return redirect(request.url)
-            
-    return render_template('eco_design_enovia.html')
+        except Exception as e:
+            error = str(e)
+
+    return render_template('eco_design_enovia.html', error=error)
 
 @app.route('/exported3d_dma', methods=['GET', 'POST'])
 @login_required
 @check_access
 def exported3d_dma():
     if request.method == 'POST':
-        dma_ref = request.form.get('dma_reference')
+        dma_reference = request.form.get('dma_reference', '').strip()
         has_step = 'step' in request.form
         has_thickness = 'thickness' in request.form
-        flash(f'Form submitted: Ref={dma_ref}, Step={has_step}, Thickness={has_thickness}', 'success')
+
+        if not dma_reference:
+            flash('DMA reference is required.', 'error')
+            return redirect(url_for('exported3d_dma'))
+
+        # Build option string — mutually exclusive (step takes priority)
+        if has_step:
+            option = "-STEP-"
+        elif has_thickness:
+            option = "-THICK-"
+        else:
+            option = "-"
+
+        # Parse DMA ref / rev
+        parts = dma_reference.split("/")
+        dma_ref = parts[0].strip()
+        dma_rev = parts[1].strip() if len(parts) >= 2 else "#"
+
+        try:
+            proxy = xmlrpc.client.ServerProxy(app.config['PROXY_QUERY'])
+            uid = current_user.username
+
+            # Validate DMA reference — no site param for this route
+            result = proxy.CHECKDMAREF(uid, dma_ref, dma_rev, app.config['HOST'], "0", option)
+            dmaref, dmavers, dmaminor, dmacoid, dmamaturity = eval(result)
+
+            if str(dmaref) != "None":
+                proxy.ADMIN3DFROMDMA(uid, dma_ref, dma_rev, request.remote_addr, "0", option)
+                flash(f'3D from DMA job queued: Ref={dma_ref}, Rev={dma_rev}, Options={option}', 'success')
+            else:
+                flash(f'DMA reference not found: {dma_ref}/{dma_rev}', 'error')
+
+        except Exception as e:
+            flash(f'XML-RPC error: {e}', 'error')
+
         return redirect(url_for('exported3d_dma'))
     return render_template('exported3d_dma.html')
 
@@ -422,207 +627,783 @@ def exported3d_dma():
 @login_required
 @check_access
 def exported3d_tcra():
+    results = []
+    error = None
     if request.method == 'POST':
-        if 'excel_file' not in request.files:
-            flash('No file part', 'error')
+        files = request.files.getlist('tcra_file')
+        if not files or all(f.filename == '' for f in files):
+            flash('No file selected.', 'error')
             return redirect(request.url)
-            
-        file = request.files['excel_file']
-        
-        if file.filename == '':
-            flash('No selected file', 'error')
-            return redirect(request.url)
-            
-        if file and (file.filename.endswith('.xlsx') or file.filename.endswith('.xlsm')):
-            flash(f'File "{file.filename}" uploaded successfully.', 'success')
-            return redirect(url_for('exported3d_tcra'))
-        else:
-            flash('Invalid file format. Only .xlsx and .xlsm are allowed.', 'error')
-            return redirect(request.url)
-    return render_template('exported3d_tcra.html')
+        try:
+            proxy = xmlrpc.client.ServerProxy(app.config['PROXY_QUERY'])
+            uid = current_user.username
+            opt_str = "-STEP-"
+            for f in files:
+                fn = os.path.basename(f.filename)
+                dma_ref = time.strftime("%Y%m%d_%H%M%S") + "_TCRA_" + fn
+                dma_rev = "NotUsed"
+                export_file = os.path.normpath(os.path.join(app.config['PREPROCESSING_REPORT'], dma_ref))
+                f.save(export_file)
+                proxy.ADMIN3DFROMTCRA(uid, dma_ref, dma_rev, request.remote_addr, "0", opt_str)
+                hyperlink = "file://sacrl1gla2/" + fn[0:3] + "_PLM_Reports/Reports"
+                results.append({'filename': fn, 'hyperlink': hyperlink})
+        except Exception as e:
+            error = str(e)
+    return render_template('exported3d_tcra.html', results=results, error=error)
 
-@app.route('/exported3d_report')
+@app.route('/exported3d_report', methods=['GET', 'POST'])
 @login_required
 @check_access
 def exported3d_report():
-    return render_template('exported3d_report.html')
+    error = None
+    if request.method == 'POST':
+        xml_data = request.form.get('tree_xml', '').strip()
+        has_step = 'step' in request.form
+        if not xml_data:
+            error = 'No tree data submitted.'
+            return render_template('exported3d_report.html', error=error)
+        try:
+            tree = ET.fromstring(xml_data)
+            children = list(tree)
+            report_name = children[0].text if children else 'report'
+            dma_ref = time.strftime("%Y%m%d_%H%M%S") + "_URA_" + report_name
+            dma_rev = "NotUsed"
+            option = "-STEP-" if has_step else "-"
+
+            export_file = os.path.normpath(os.path.join(app.config['PREPROCESSING_REPORT'], dma_ref))
+            with open(export_file, "w") as dst:
+                if tree.tag == 'Report':
+                    dst.write(f"1:{tree.tag}:{report_name}\n")
+                for child in list(children[0]):
+                    write_ura_nodes(dst, child, 2)
+
+            proxy = xmlrpc.client.ServerProxy(app.config['PROXY_QUERY'])
+            proxy.ADMIN3DFROMDMA(current_user.username, dma_ref, dma_rev, request.remote_addr, "0", option)
+            flash(f'URA report job queued: {report_name}', 'success')
+            return redirect(url_for('exported3d_report'))
+        except Exception as e:
+            error = str(e)
+    return render_template('exported3d_report.html', error=error)
+
+
+@app.route('/exported3d_report_check', methods=['POST'])
+@login_required
+def exported3d_report_check():
+    refs_text = request.form.get('refs', '').strip()
+    result = ''
+    try:
+        proxy = xmlrpc.client.ServerProxy(app.config['PROXY_QUERY'])
+        uid = current_user.username
+        for line in refs_text.split('\n'):
+            line = line.strip()
+            if not line:
+                continue
+            # Format: AK00001234567/A — ref is first 13 chars, rev from char 14 onward
+            dma_ref = line[0:13].upper()
+            dma_rev = line[14:].upper() if len(line) > 14 else '#'
+            new = proxy.CHECKDMAREF(uid, dma_ref, dma_rev, app.config['HOST'], "0", "-")
+            dmaref, *_ = eval(new)
+            if str(dmaref) != "None":
+                result += dma_ref + "/" + dma_rev + "\n"
+            elif dma_ref:
+                result += dma_ref + "/" + dma_rev + " - Not found\n"
+    except Exception as e:
+        result = f"Error: {e}"
+    return Response(result, mimetype='text/plain')
 
 @app.route('/ext2dmz_neodma', methods=['GET', 'POST'])
 @login_required
 @check_access
 def ext2dmz_neodma():
+    error = None
     if request.method == 'POST':
         if 'neodma_file' not in request.files:
-            flash('No file part', 'error')
-            return redirect(request.url)
+            error = 'No file part in request.'
+            return render_template('ext2dmz_neodma.html', error=error)
         file = request.files['neodma_file']
         if file.filename == '':
-            flash('No selected file', 'error')
-            return redirect(request.url)
-        if file:
-            flash(f'File "{file.filename}" uploaded successfully.', 'success')
+            error = 'No file selected.'
+            return render_template('ext2dmz_neodma.html', error=error)
+        try:
+            fn = os.path.basename(file.filename)
+            file_bytes = file.read()
+
+            # Parse XML to extract PartNumber and HarnessVersion from MHBillOfMaterial
+            try:
+                tree = ET.parse(io.BytesIO(file_bytes))
+            except ET.ParseError as e:
+                error = f'The input file is not a valid XML file: {e}'
+                return render_template('ext2dmz_neodma.html', error=error)
+
+            root = tree.getroot()
+            rev_xml = ''
+            ref_xml = ''
+            for child in root:
+                if child.tag == 'MHBillOfMaterial':
+                    rev_xml = str(child.attrib.get('HarnessVersion', '')).strip().upper()
+                    ref_xml = str(child.attrib.get('PartNumber', '')).strip().upper()
+                    break
+
+            if not rev_xml or not ref_xml:
+                error = 'Missing PartNumber or HarnessVersion in MHBillOfMaterial element.'
+                return render_template('ext2dmz_neodma.html', error=error)
+
+            # Validate ref/rev exists via XML-RPC (replaces direct DB query)
+            proxy = xmlrpc.client.ServerProxy(app.config['PROXY_QUERY'])
+            uid = current_user.username
+            check = proxy.CHECKDMAREF(uid, ref_xml, rev_xml, app.config['HOST'], "0", "-")
+            dmaref, *_ = eval(check)
+            if str(dmaref) == "None":
+                error = f'Reference {ref_xml}/{rev_xml} from XML file not found in DMA.'
+                return render_template('ext2dmz_neodma.html', error=error)
+
+            # Rebuild filename as {ref}@{rev}@{original} and build DMAref
+            fn_parts = fn.split('@')
+            fn_base = fn_parts[-1]
+            fn = f"{ref_xml}@{rev_xml}@{fn_base}"
+            dma_ref = time.strftime("%Y%m%d_%H%M%S") + "_NEOPLMXML_" + fn
+            dma_rev = ""
+
+            export_file = os.path.normpath(os.path.join(app.config['PREPROCESSING_REPORT'], dma_ref))
+            with open(export_file, "wb") as dst:
+                dst.write(file_bytes)
+
+            uid_name = uid.split("@")[0].replace("NEO2DMA", "-NEO2DMA")
+            proxy.NEOPLMXML(uid_name, dma_ref, dma_rev, request.remote_addr, "0", "-NEO2DMA-")
+            flash(f'NEO2DMA job queued: {ref_xml}/{rev_xml}', 'success')
             return redirect(url_for('ext2dmz_neodma'))
-    return render_template('ext2dmz_neodma.html')
+        except Exception as e:
+            error = str(e)
+    return render_template('ext2dmz_neodma.html', error=error)
 
 @app.route('/ext2dmz_elsa2dma', methods=['GET', 'POST'])
 @login_required
 @check_access
 def ext2dmz_elsa2dma():
+    error = None
     if request.method == 'POST':
         if 'elsa2dma_file' not in request.files:
-            flash('No file part', 'error')
-            return redirect(request.url)
+            error = 'No file part in request.'
+            return render_template('ext2dmz_elsa2dma.html', error=error)
         file = request.files['elsa2dma_file']
         if file.filename == '':
-            flash('No selected file', 'error')
-            return redirect(request.url)
-        if file:
-            flash(f'File "{file.filename}" uploaded successfully.', 'success')
+            error = 'No file selected.'
+            return render_template('ext2dmz_elsa2dma.html', error=error)
+        try:
+            fn = os.path.basename(file.filename)
+            if '@' not in fn:
+                error = f'Invalid filename "{fn}": must contain "@" separator (e.g. ref@rev@filename).'
+                return render_template('ext2dmz_elsa2dma.html', error=error)
+
+            dma_ref = time.strftime("%Y%m%d_%H%M%S") + "_NEOPLMXML_" + fn
+            dma_rev = ""
+
+            export_file = os.path.normpath(os.path.join(app.config['PREPROCESSING_REPORT'], dma_ref))
+            file.save(export_file)
+
+            proxy = xmlrpc.client.ServerProxy(app.config['PROXY_QUERY'])
+            uid = current_user.username
+            uid_name = uid.split("@")[0].replace("ELSA2DMA", "-ELSA2DMA")
+            proxy.NEOPLMXML(uid_name, dma_ref, dma_rev, request.remote_addr, "0", "-ELSA2DMA-")
+            flash(f'ELSA2DMA job queued: {fn}', 'success')
             return redirect(url_for('ext2dmz_elsa2dma'))
-    return render_template('ext2dmz_elsa2dma.html')
+        except Exception as e:
+            error = str(e)
+    return render_template('ext2dmz_elsa2dma.html', error=error)
 
 @app.route('/ext2dmz_excel2dma', methods=['GET', 'POST'])
 @login_required
 @check_access
 def ext2dmz_excel2dma():
+    error = None
     if request.method == 'POST':
         if 'excel2dma_file' not in request.files:
-            flash('No file part', 'error')
-            return redirect(request.url)
+            error = 'No file part in request.'
+            return render_template('ext2dmz_excel2dma.html', error=error)
         file = request.files['excel2dma_file']
         if file.filename == '':
-            flash('No selected file', 'error')
-            return redirect(request.url)
-        if file:
-            flash(f'File "{file.filename}" uploaded successfully.', 'success')
+            error = 'No file selected.'
+            return render_template('ext2dmz_excel2dma.html', error=error)
+        try:
+            fn = os.path.basename(file.filename)
+            if '@' not in fn:
+                error = f'Invalid filename "{fn}": must contain "@" separator (e.g. ref@rev@filename).'
+                return render_template('ext2dmz_excel2dma.html', error=error)
+
+            dma_ref = time.strftime("%Y%m%d_%H%M%S") + "_NEOPLMXML_" + fn
+            dma_rev = ""
+
+            export_file = os.path.normpath(os.path.join(app.config['PREPROCESSING_REPORT'], dma_ref))
+            file.save(export_file)
+
+            proxy = xmlrpc.client.ServerProxy(app.config['PROXY_QUERY'])
+            uid = current_user.username
+            uid_name = uid.split("@")[0].replace("EXCEL2DMA", "-EXCEL2DMA")
+            proxy.NEOPLMXML(uid_name, dma_ref, dma_rev, request.remote_addr, "0", "-EXCEL2DMA-")
+            flash(f'EXCEL2DMA job queued: {fn}', 'success')
             return redirect(url_for('ext2dmz_excel2dma'))
-    return render_template('ext2dmz_excel2dma.html')
+        except Exception as e:
+            error = str(e)
+    return render_template('ext2dmz_excel2dma.html', error=error)
 
 @app.route('/ext2dmz_elsa2bthtsp', methods=['GET', 'POST'])
 @login_required
 @check_access
 def ext2dmz_elsa2bthtsp():
+    error = None
     if request.method == 'POST':
         if 'elsa2bthtsp_file' not in request.files:
-            flash('No file part', 'error')
-            return redirect(request.url)
+            error = 'No file part in request.'
+            return render_template('ext2dmz_elsa2bthtsp.html', error=error)
         file = request.files['elsa2bthtsp_file']
         if file.filename == '':
-            flash('No selected file', 'error')
-            return redirect(request.url)
-        if file:
-            flash(f'File "{file.filename}" uploaded successfully.', 'success')
+            error = 'No file selected.'
+            return render_template('ext2dmz_elsa2bthtsp.html', error=error)
+        try:
+            fn = os.path.basename(file.filename)
+            if '@' not in fn:
+                error = f'Invalid filename "{fn}": must contain "@" separator (e.g. ref@rev@filename).'
+                return render_template('ext2dmz_elsa2bthtsp.html', error=error)
+
+            dma_ref = time.strftime("%Y%m%d_%H%M%S") + "_NEOPLMXML_" + fn
+            dma_rev = ""
+
+            export_file = os.path.normpath(os.path.join(app.config['PREPROCESSING_REPORT'], dma_ref))
+            file.save(export_file)
+
+            proxy = xmlrpc.client.ServerProxy(app.config['PROXY_QUERY'])
+            uid = current_user.username
+            uid_name = uid.split("@")[0].replace("ELSA2BTHTSP", "-ELSA2BTHTSP")
+            proxy.NEOPLMXML(uid_name, dma_ref, dma_rev, request.remote_addr, "0", "-ELSA2BTHTSP-")
+            flash(f'ELSA2BTHTSP job queued: {fn}', 'success')
             return redirect(url_for('ext2dmz_elsa2bthtsp'))
-    return render_template('ext2dmz_elsa2bthtsp.html')
+        except Exception as e:
+            error = str(e)
+    return render_template('ext2dmz_elsa2bthtsp.html', error=error)
 
 @app.route('/delta_dma', methods=['GET', 'POST'])
 @login_required
 @check_access
 def delta_dma():
+    error = None
     if request.method == 'POST':
-        source_ref = request.form.get('source_dma_reference')
-        dest_ref = request.form.get('destination_dma_reference')
-        flash(f'Form submitted: Source Ref={source_ref}, Destination Ref={dest_ref}', 'success')
-        return redirect(url_for('delta_dma'))
-    return render_template('delta_dma.html')
+        reference_from = request.form.get('reference_from', '').strip()
+        reference_to = request.form.get('reference_to', '').strip()
+
+        if not reference_from or not reference_to:
+            error = 'Both source and destination references are required.'
+            return render_template('delta_dma.html', error=error)
+
+        pattern = re.compile(r'^[^\s/]+/[^\s/]+$')
+        for ref in [reference_from, reference_to]:
+            if not pattern.match(ref):
+                error = 'Use / to separate reference and revision (e.g. AK00000000000/D) with no spaces.'
+                return render_template('delta_dma.html', error=error)
+
+        try:
+            uid = current_user.username
+            full_name = f"{current_user.first_name} {current_user.last_name}"
+            job_name = time.strftime("%Y_%m_%d-%H_%M_%S") + "_-DELTA-DMA_" + \
+                       reference_from.replace("/", "_") + "-" + reference_to.replace("/", "_")
+            working_dir = os.path.join(app.config['SHARE_ALTERNATE_WORKING'], job_name)
+            output_path = os.path.join(app.config['SHARE_DELTA'], 'DELTA_DMA')
+
+            payload = {
+                "action": "DELTA_DMA",
+                "working_dir": working_dir,
+                "reference_1": reference_from,
+                "working_1": False,
+                "reference_2": reference_to,
+                "working_2": False,
+                "output_path": output_path,
+                "language": "EN",
+                "name": full_name
+            }
+            content = f"DELTA-DMA<>{uid}<><><><><>{json.dumps(payload, ensure_ascii=False)}"
+
+            queued_path = os.path.join(app.config['SHARE_SPOOL'], "QUEUED", job_name)
+            with open(queued_path, "w") as f:
+                f.write(content)
+
+            flash(f'Delta DMA job queued: {reference_from} → {reference_to}', 'success')
+            return redirect(url_for('delta_dma'))
+        except Exception as e:
+            error = str(e)
+    return render_template('delta_dma.html', error=error)
 
 @app.route('/delta_tcra', methods=['GET', 'POST'])
 @login_required
 @check_access
 def delta_tcra():
+    error = None
     if request.method == 'POST':
-        source_ref = request.form.get('source_tcra_reference')
-        source_on_working = 'source_on_working' in request.form
-        dest_ref = request.form.get('destination_tcra_reference')
-        dest_on_working = 'destination_on_working' in request.form
-        flash(f'Form submitted: Source Ref={source_ref}, Source Working={source_on_working}, Dest Ref={dest_ref}, Dest Working={dest_on_working}', 'success')
-        return redirect(url_for('delta_tcra'))
-    return render_template('delta_tcra.html')
+        reference_from = request.form.get('reference_from', '').strip()
+        reference_to = request.form.get('reference_to', '').strip()
+        working_from = True if request.form.get('working_from') else False
+        working_to = True if request.form.get('working_to') else False
+
+        if not reference_from or not reference_to:
+            error = 'Both source and destination references are required.'
+            return render_template('delta_tcra.html', error=error)
+
+        pattern = re.compile(r'^[^\s/]+/[^\s/]+$')
+        for ref in [reference_from, reference_to]:
+            if not pattern.match(ref):
+                error = 'Use / to separate reference and revision (e.g. AK00000000000/D) with no spaces.'
+                return render_template('delta_tcra.html', error=error)
+
+        try:
+            uid = current_user.username
+            full_name = f"{current_user.first_name} {current_user.last_name}"
+            job_name = time.strftime("%Y_%m_%d-%H_%M_%S") + "_-DELTA-TCRA_" + \
+                       reference_from.replace("/", "_") + "-" + reference_to.replace("/", "_")
+            working_dir = os.path.join(app.config['SHARE_ALTERNATE_WORKING'], job_name)
+            output_path = os.path.join(app.config['SHARE_DELTA'], 'DELTA_TCRA')
+
+            payload = {
+                "action": "DELTA_TCRA",
+                "working_dir": working_dir,
+                "reference_1": reference_from,
+                "working_1": working_from,
+                "reference_2": reference_to,
+                "working_2": working_to,
+                "output_path": output_path,
+                "language": "EN",
+                "name": full_name
+            }
+            content = f"DELTA-TCRA<>{uid}<><><><><>{json.dumps(payload, ensure_ascii=False)}"
+
+            queued_path = os.path.join(app.config['SHARE_SPOOL'], "QUEUED", job_name)
+            with open(queued_path, "w") as f:
+                f.write(content)
+
+            flash(f'Delta TCRA job queued: {reference_from} → {reference_to}', 'success')
+            return redirect(url_for('delta_tcra'))
+        except Exception as e:
+            error = str(e)
+    return render_template('delta_tcra.html', error=error)
+
+def _tcra_check_report_exist(reference, uid):
+    tcra_dir = app.config['SHARE_ALTERNATE_WORKING']
+    ref_rev = "TCRA_" + reference.replace("/", "_")
+    try:
+        entries = sorted(os.listdir(tcra_dir), reverse=True)
+    except Exception:
+        return None
+    for entry in entries:
+        if ref_rev in entry:
+            dir_path = os.path.join(tcra_dir, entry)
+            if os.path.isdir(dir_path):
+                config_bin = os.path.join(dir_path, 'bin', 'config.bin')
+                tcra_dict = os.path.join(dir_path, 'bin', 'tcra.dict')
+                if os.path.isfile(config_bin) and os.path.isfile(tcra_dict):
+                    try:
+                        with open(config_bin, 'r', encoding='latin-1') as f:
+                            cfg = json.load(f)
+                        if cfg.get('USER_NAME', '').lower() == uid.lower():
+                            return dir_path
+                    except Exception:
+                        continue
+    return None
 
 @app.route('/tcra_report', methods=['GET', 'POST'])
 @login_required
 @check_access
 def tcra_report():
+    error = None
     if request.method == 'POST':
-        tc_ref = request.form.get('tc_reference')
-        flash(f'Form submitted: TC Ref={tc_ref}', 'success')
-        return redirect(url_for('tcra_report'))
-    return render_template('tcra_report.html')
+        submitted_mode = request.form.get('mode', '')
+        reference = request.form.get('tcReference', '').strip()
+
+        if submitted_mode == 'CHECK_TC':
+            if not reference or '/' not in reference:
+                error = 'Use / to separate reference and revision (e.g. AK00000000000/D).'
+                return render_template('tcra_report.html', mode='start', error=error)
+            uid = current_user.username
+            existing_dir = _tcra_check_report_exist(reference, uid)
+            if existing_dir:
+                existing_date = ''
+                try:
+                    with open(os.path.join(existing_dir, 'bin', 'config.bin'), 'r', encoding='latin-1') as f:
+                        cfg = json.load(f)
+                    existing_date = cfg.get('CREATED_ON', '')
+                except Exception:
+                    pass
+                return render_template('tcra_report.html', mode='dir_found',
+                                       reference=reference, existing_dir=existing_dir,
+                                       existing_date=existing_date)
+            else:
+                return render_template('tcra_report.html', mode='options', reference=reference)
+
+        elif submitted_mode == 'REGENERATE':
+            return render_template('tcra_report.html', mode='options', reference=reference)
+
+        elif submitted_mode == 'RELOAD':
+            return redirect(url_for('tcra_report'))
+
+        elif submitted_mode == 'CREATE_TCRA':
+            try:
+                uid = current_user.username
+                full_name = f"{current_user.first_name} {current_user.last_name}"
+                ref_rev = reference.replace('/', '_')
+                time_stamp = time.strftime("%Y_%m_%d_%H_%M_%S_TCRA_") + ref_rev
+                full_path = os.path.join(app.config['SHARE_ALTERNATE_WORKING'], time_stamp)
+                end_user_path = os.path.join(app.config['SHARE_TCRA_OUT'], time_stamp)
+                os.makedirs(os.path.join(full_path, 'bin'), exist_ok=True)
+
+                dict_config = {
+                    'REP_SUBCONTRACTOR': request.form.get('SUBCONTRACTOR', 'NONE'),
+                    'REP_MANUFAC': request.form.get('REP_MANUFAC', 'FALSE'),
+                    'CREATE_3D': request.form.get('CREATE_3D', 'FALSE'),
+                    'DXF_FOLDER': request.form.get('DXF_FOLDER', 'FALSE'),
+                    'EBOM_ONLY': request.form.get('EBOM_ONLY', 'FALSE'),
+                    'LIST_DOCS': request.form.get('LIST_DOCS', 'FALSE'),
+                    'PART_LIST': request.form.get('PART_LIST', 'FALSE'),
+                    'REF_REV': reference,
+                    'REMOVE_CI': request.form.get('REMOVE_CI', 'FALSE'),
+                    'REMOVE_MAKE_BUY': request.form.get('REMOVE_MAKE_BUY', 'FALSE'),
+                    'SEL_TT_CI': request.form.get('SEL_TT_CI', 'TT'),
+                    'LEVEL_NODES': request.form.get('LEVEL_NODES', '*'),
+                    'TREE_EDIT': request.form.get('TREE_EDIT', 'FALSE'),
+                    'UNZIP_FILES': request.form.get('UNZIP_FILES', 'FALSE'),
+                    'FULL_PATH': full_path,
+                    'END_USER_PATH': end_user_path,
+                    'CREATED_ON': time.strftime("%d/%m/%Y %H:%M:%S"),
+                    'USER_NAME': uid,
+                    'FULL_NAME': full_name,
+                    'LANGUAGE': 'EN',
+                    'PROJECT_NAME': request.form.get('PROJECT_NAME', ''),
+                    'REPORT_PATH': full_path + '/bin/report',
+                    'TTBOM': request.form.get('TTBOM', 'FALSE'),
+                    'EXPAND_MBOM_BUY_TREE': request.form.get('EXPAND_MBOM_BUY_TREE', 'FALSE'),
+                    'NO_CLIENT_PLAN': request.form.get('NO_CLIENT_PLAN', 'FALSE'),
+                }
+                with open(os.path.join(full_path, 'bin', 'config.bin'), 'w', encoding='latin-1') as f:
+                    json.dump(dict_config, f, ensure_ascii=False, indent=4)
+
+                job_mode = 'BIN' if dict_config['TREE_EDIT'] == 'TRUE' else 'TOTAL'
+                config_file_name = time_stamp + '.txt'
+                job_path = os.path.join(app.config['PREPROCESSING_REPORT'], config_file_name)
+                with open(job_path, 'w', encoding='latin-1') as f:
+                    json.dump({'fullPath': full_path, 'MODE': job_mode}, f, ensure_ascii=False, indent=4)
+
+                proxy = xmlrpc.client.ServerProxy(app.config['PROXY_QUERY'])
+                proxy.TCRAREPORT(uid, config_file_name, "None", request.remote_addr, "0", "-")
+                flash(f'TCRA report job queued: {reference}', 'success')
+                return redirect(url_for('tcra_report'))
+            except Exception as e:
+                error = str(e)
+                return render_template('tcra_report.html', mode='options', reference=reference, error=error)
+
+        elif submitted_mode == 'COMPLETE_REPORTS':
+            existing_dir = request.form.get('dir', '')
+            try:
+                config_bin_path = os.path.join(existing_dir, 'bin', 'config.bin')
+                with open(config_bin_path, 'r', encoding='latin-1') as f:
+                    dict_config = json.load(f)
+                full_path = dict_config['FULL_PATH']
+                ref_rev = reference.replace('/', '_')
+                time_stamp = time.strftime("%Y_%m_%d_%H_%M_%S_TCRA_") + ref_rev
+                dict_config['END_USER_PATH'] = os.path.join(app.config['SHARE_TCRA_OUT'], time_stamp)
+                dict_config['CREATED_ON'] = time.strftime("%d/%m/%Y %H:%M:%S")
+                with open(config_bin_path, 'w', encoding='latin-1') as f:
+                    json.dump(dict_config, f, ensure_ascii=False, indent=4)
+
+                config_file_name = os.path.basename(full_path) + '.txt'
+                job_path = os.path.join(app.config['PREPROCESSING_REPORT'], config_file_name)
+                with open(job_path, 'w', encoding='latin-1') as f:
+                    json.dump({'fullPath': full_path, 'MODE': 'REPORT'}, f, ensure_ascii=False, indent=4)
+
+                uid = current_user.username
+                proxy = xmlrpc.client.ServerProxy(app.config['PROXY_QUERY'])
+                proxy.TCRAREPORT(uid, config_file_name, "None", request.remote_addr, "0", "-")
+                flash(f'TCRA complete reports job queued: {reference}', 'success')
+                return redirect(url_for('tcra_report'))
+            except Exception as e:
+                error = str(e)
+                return render_template('tcra_report.html', mode='start', error=error)
+
+    return render_template('tcra_report.html', mode='start', error=error)
 
 @app.route('/tcra_delta_check', methods=['GET', 'POST'])
 @login_required
 @check_access
 def tcra_delta_check():
+    error = None
     if request.method == 'POST':
-        source_file = request.files.get('source_tcra_file')
-        source_filename = source_file.filename if source_file else 'None'
-        
-        dest_type = request.form.get('dest_load_type')
-        if dest_type == 'file':
-            dest_file = request.files.get('dest_tcra_file')
-            dest_val = f"File: {dest_file.filename if dest_file else 'None'}"
+        file_from = request.files.get('fileTCRA_from')
+        select_to = request.form.get('select_to', '')
+        file_to = request.files.get('fileTCRA_to')
+        reference_to = request.form.get('tcReference_to', '').strip()
+
+        # Validate source
+        if not file_from or file_from.filename == '':
+            error = 'Source TCRA file not loaded.'
+            return render_template('tcra_delta_check.html', error=error)
+        name_from = os.path.basename(file_from.filename)
+        conf_file_from = name_from
+        conf_ref_from = ''
+
+        # Validate destination
+        if select_to == 'FILE':
+            if not file_to or file_to.filename == '':
+                error = 'Destination TCRA file not loaded.'
+                return render_template('tcra_delta_check.html', error=error)
+            name_to = os.path.basename(file_to.filename)
+            conf_file_to = name_to
+            conf_ref_to = ''
+            if name_from == name_to:
+                error = 'TCRA source and destination cannot be identical.'
+                return render_template('tcra_delta_check.html', error=error)
+        elif select_to == 'REFERENCE':
+            if not reference_to or '/' not in reference_to:
+                error = 'Use / to separate reference and revision (e.g. AK00000000000/D).'
+                return render_template('tcra_delta_check.html', error=error)
+            name_to = reference_to
+            conf_file_to = ''
+            conf_ref_to = reference_to
         else:
-            dest_val = f"Reference: {request.form.get('dest_tcra_reference')}"
-            
-        flash(f'Form submitted: Source={source_filename}, Destination=({dest_type}) {dest_val}', 'success')
-        return redirect(url_for('tcra_delta_check'))
-        
-    return render_template('tcra_delta_check.html')
+            error = 'Please select a destination type.'
+            return render_template('tcra_delta_check.html', error=error)
+
+        try:
+            uid = current_user.username
+            full_name = f"{current_user.first_name} {current_user.last_name}"
+            delta_ref = f"{name_from.replace('/', '_')}-{name_to.replace('/', '_')}"
+            time_stamp = time.strftime("%Y_%m_%d_%H_%M_%S_TCRA_") + delta_ref
+            full_path = os.path.join(app.config['SHARE_ALTERNATE_WORKING'], time_stamp)
+            end_user_path = os.path.join(app.config['SHARE_DELTA_TCRA_OUT'], time_stamp)
+            os.makedirs(os.path.join(full_path, 'bin'), exist_ok=True)
+
+            dict_config = {
+                'REF_REV': delta_ref,
+                'FULL_PATH': full_path,
+                'END_USER_PATH': end_user_path,
+                'CREATED_ON': time.strftime("%d/%m/%Y %H:%M:%S"),
+                'USER_NAME': uid,
+                'FULL_NAME': full_name,
+                'LANGUAGE': 'EN',
+                'FILE_FROM': conf_file_from,
+                'FILE_TO': conf_file_to,
+                'REF_FROM': conf_ref_from,
+                'REF_TO': conf_ref_to,
+            }
+            with open(os.path.join(full_path, 'bin', 'config.bin'), 'w', encoding='latin-1') as f:
+                json.dump(dict_config, f, ensure_ascii=False, indent=4)
+
+            if conf_file_from:
+                file_from.save(os.path.join(full_path, conf_file_from))
+            if conf_file_to:
+                file_to.save(os.path.join(full_path, conf_file_to))
+
+            config_file_name = time_stamp + '.txt'
+            job_path = os.path.join(app.config['PREPROCESSING_REPORT'], config_file_name)
+            with open(job_path, 'w', encoding='latin-1') as f:
+                json.dump({'fullPath': full_path, 'MODE': 'DELTA'}, f, ensure_ascii=False, indent=4)
+
+            proxy = xmlrpc.client.ServerProxy(app.config['PROXY_QUERY'])
+            proxy.TCRAREPORT(uid, config_file_name, "None", request.remote_addr, "0", "-")
+            flash(f'TCRA delta check job queued: {name_from} → {name_to}', 'success')
+            return redirect(url_for('tcra_delta_check'))
+        except Exception as e:
+            error = str(e)
+
+    return render_template('tcra_delta_check.html', error=error)
 
 @app.route('/tcra_delta_dma_check', methods=['GET', 'POST'])
 @login_required
 @check_access
 def tcra_delta_dma_check():
+    error = None
     if request.method == 'POST':
-        source_type = request.form.get('source_load_type')
-        if source_type == 'reference':
-            source_ref = request.form.get('source_tcra_reference')
-            source_date = request.form.get('source_tcra_date')
-            source_val = f"Ref: {source_ref}, Date: {source_date}"
+        select_from = request.form.get('select_from', '')
+        reference_from = request.form.get('tcReference_from', '').strip()
+        reference_date = request.form.get('tcReference_date', '').strip()
+        file_from = request.files.get('fileTCRA_from')
+        reference_dma = request.form.get('dmaReference_from', '').strip()
+
+        # Validate DMA destination (always required)
+        if not reference_dma or '/' not in reference_dma or len(reference_dma.split('/')) != 2 or reference_dma.split('/')[1] == '':
+            error = 'Use / to separate DMA reference and revision (e.g. AK00000000000/D).'
+            return render_template('tcra_delta_dma_check.html', error=error)
+
+        dma_ref = reference_dma.split('/')[0]
+        dma_rev = reference_dma.split('/')[1]
+
+        if select_from == 'REFERENCE':
+            if not reference_from or '/' not in reference_from or len(reference_from.split('/')) != 2 or reference_from.split('/')[1] == '':
+                error = 'Use / to separate TC reference and revision (e.g. AK00000000000/D).'
+                return render_template('tcra_delta_dma_check.html', error=error)
+            if not reference_date:
+                error = 'Please enter a valid date.'
+                return render_template('tcra_delta_dma_check.html', error=error)
+            ref_tc = reference_from.replace('/', '_')
+            delta_reference = f"DMA_{ref_tc}_{dma_rev}"
+            conf_file_from = ''
+        elif select_from == 'FILE':
+            if not file_from or file_from.filename == '':
+                error = 'Source TCRA file not loaded.'
+                return render_template('tcra_delta_dma_check.html', error=error)
+            tcra_stem = os.path.splitext(os.path.basename(file_from.filename))[0]
+            dma_name = reference_dma.replace('/', '_').strip()
+            delta_reference = f"DMA_{tcra_stem}_{dma_name}"
+            conf_file_from = os.path.basename(file_from.filename)
         else:
-            source_file = request.files.get('source_tcra_file')
-            source_val = f"File: {source_file.filename if source_file else 'None'}"
-            
-        dest_ref = request.form.get('dest_dma_reference')
-        
-        flash(f'Form submitted: Source=({source_type}) {source_val}, Dest DMA Ref={dest_ref}', 'success')
-        return redirect(url_for('tcra_delta_dma_check'))
-        
-    return render_template('tcra_delta_dma_check.html')
+            error = 'Please select a source type.'
+            return render_template('tcra_delta_dma_check.html', error=error)
+
+        try:
+            uid = current_user.username
+            full_name = f"{current_user.first_name} {current_user.last_name}"
+            time_stamp = time.strftime("%Y_%m_%d_%H_%M_%S_TCRA_") + delta_reference
+            full_path = os.path.join(app.config['SHARE_ALTERNATE_WORKING'], time_stamp)
+            end_user_path = os.path.join(app.config['SHARE_DELTA_TCRA_DMA_OUT'], time_stamp)
+            os.makedirs(os.path.join(full_path, 'bin'), exist_ok=True)
+
+            params = {
+                'TCITEMD': '',
+                'TCREV': '',
+                'TCDATE': '',
+                'DMAREF': dma_ref,
+                'DMAREV': dma_rev,
+                'FULL_PATH': full_path,
+                'END_USER_PATH': end_user_path,
+                'USER_NAME': uid,
+                'FULL_NAME': full_name,
+                'LANGUAGE': 'EN',
+            }
+
+            if select_from == 'FILE':
+                file_from.save(os.path.join(full_path, conf_file_from))
+                params['TCITEMD'] = f'TCRA:{conf_file_from}'
+            else:
+                params['TCITEMD'] = reference_from.split('/')[0]
+                params['TCREV'] = reference_from.split('/')[1]
+                params['TCDATE'] = reference_date
+
+            with open(os.path.join(full_path, 'bin', 'params_delta.txt'), 'w', encoding='latin-1') as f:
+                json.dump(params, f, ensure_ascii=False, indent=4)
+
+            config_file_name = time_stamp + '.txt'
+            job_path = os.path.join(app.config['PREPROCESSING_REPORT'], config_file_name)
+            with open(job_path, 'w', encoding='latin-1') as f:
+                json.dump({'fullPath': full_path, 'MODE': 'DELTA'}, f, ensure_ascii=False, indent=4)
+
+            py_script = app.config['PY_DELTA_4_INDUS']
+            os.system(f'start cmd /c "title DELTA4INDUS & python.exe {py_script} {full_path}"')
+
+            flash(f'TCRA delta DMA check launched: {delta_reference}', 'success')
+            return redirect(url_for('tcra_delta_dma_check'))
+        except Exception as e:
+            error = str(e)
+
+    return render_template('tcra_delta_dma_check.html', error=error)
 
 @app.route('/tcra_delta_eng_check', methods=['GET', 'POST'])
 @login_required
 @check_access
 def tcra_delta_eng_check():
+    error = None
     if request.method == 'POST':
-        incl_specs = 'include_specifications' in request.form
-        incl_refs = 'include_references' in request.form
-        
-        src_ref = request.form.get('source_tcra_reference')
-        src_date = request.form.get('source_tcra_date')
-        
-        dest_ref = request.form.get('dest_tcra_reference')
-        dest_date = request.form.get('dest_tcra_date')
-        
-        flash(f'Form submitted: Specs={incl_specs}, Refs={incl_refs}, Source=({src_ref}, {src_date}), Dest=({dest_ref}, {dest_date})', 'success')
-        return redirect(url_for('tcra_delta_eng_check'))
-        
-    return render_template('tcra_delta_eng_check.html')
+        reference_from = request.form.get('tcReference_from', '').strip()
+        reference_date = request.form.get('tcReference_date', '').strip()
+        reference2_from = request.form.get('tcReference2_from', '').strip()
+        reference2_date = request.form.get('tcReference2_date', '').strip()
+        include_specs = request.form.get('REP_SPECS', 'NO')
+        include_refs = request.form.get('REP_REFS', 'NO')
+
+        for ref in [reference_from, reference2_from]:
+            if not ref or '/' not in ref or len(ref.split('/')) != 2 or ref.split('/')[1] == '':
+                error = 'Use / to separate reference and revision (e.g. AK00000000000/D).'
+                return render_template('tcra_delta_eng_check.html', error=error)
+
+        if not reference_date or not reference2_date:
+            error = 'Please enter a valid date for both source and destination.'
+            return render_template('tcra_delta_eng_check.html', error=error)
+
+        try:
+            uid = current_user.username
+            full_name = f"{current_user.first_name} {current_user.last_name}"
+            ref_tc = reference_from.replace('/', '_')
+            rev_to = reference2_from.split('/')[1]
+            delta_reference = f"ENG_{ref_tc}_{rev_to}"
+            time_stamp = time.strftime("%Y_%m_%d_%H_%M_%S_TCRA_") + delta_reference
+            full_path = os.path.join(app.config['SHARE_ALTERNATE_WORKING'], time_stamp)
+            end_user_path = os.path.join(app.config['SHARE_DELTA_TCRA_ENG_OUT'], time_stamp)
+            os.makedirs(os.path.join(full_path, 'bin'), exist_ok=True)
+
+            params = {
+                'TCITEMD1': reference_from.split('/')[0],
+                'TCREV1': reference_from.split('/')[1],
+                'TCDATE1': reference_date,
+                'TCITEMD2': reference2_from.split('/')[0],
+                'TCREV2': reference2_from.split('/')[1],
+                'TCDATE2': reference2_date,
+                'SPECS': include_specs,
+                'REFS': include_refs,
+                'FULL_PATH': full_path,
+                'END_USER_PATH': end_user_path,
+                'USER_NAME': uid,
+                'FULL_NAME': full_name,
+                'LANGUAGE': 'EN',
+            }
+            with open(os.path.join(full_path, 'bin', 'params_delta.txt'), 'w', encoding='latin-1') as f:
+                json.dump(params, f, ensure_ascii=False, indent=4)
+
+            config_file_name = time_stamp + '.txt'
+            job_path = os.path.join(app.config['PREPROCESSING_REPORT'], config_file_name)
+            with open(job_path, 'w', encoding='latin-1') as f:
+                json.dump({'fullPath': full_path, 'MODE': 'DELTA'}, f, ensure_ascii=False, indent=4)
+
+            exe = app.config['EXE_DELTATCENG']
+            subprocess.Popen([exe, full_path], close_fds=True,
+                             creationflags=0x00000200 | 0x00000010)
+
+            flash(f'TCRA delta ENG check launched: {delta_reference}', 'success')
+            return redirect(url_for('tcra_delta_eng_check'))
+        except Exception as e:
+            error = str(e)
+
+    return render_template('tcra_delta_eng_check.html', error=error)
 
 @app.route('/request_queued')
 @login_required
 @check_access
 def request_queued():
-    jobs = Job.query.filter_by(user_id=current_user.id, status='QUEUED').order_by(Job.created_at.desc()).all()
-    return render_template('request_queued.html', jobs=jobs)
+    jobs = []
+    error = None
+    try:
+        proxy = xmlrpc.client.ServerProxy(app.config['PROXY_QUERY'])
+        new = proxy.LISTREQUEST("QUEUED", "ALL", "toto")
+        t = ET.fromstring(new)
+        lines = list(t)[0].findall('line')
+        uid = current_user.username
+        for x in reversed(lines):
+            if x.get('owner') == uid:
+                jobs.append(x.get('value'))
+    except Exception as e:
+        error = str(e)
+    return render_template('request_queued.html', jobs=jobs, error=error)
 
 @app.route('/request_completed')
 @login_required
 @check_access
 def request_completed():
-    # Current user's completed jobs only (mirrors /t7 in original)
-    jobs = Job.query.filter_by(user_id=current_user.id, status='COMPLETED').order_by(Job.created_at.desc()).all()
-    return render_template('request_completed.html', jobs=jobs)
+    # Current user's completed jobs — mirrors /t7 in original
+    jobs = []
+    error = None
+    try:
+        proxy = xmlrpc.client.ServerProxy(app.config['PROXY_QUERY'])
+        new = proxy.LISTREQUEST("COMPLETED", "ALL", "toto")
+        t = ET.fromstring(new)
+        lines = list(t)[0].findall('line')
+        uid = current_user.username
+        for x in reversed(lines):
+            if x.get('owner') == uid:
+                jobs.append(x.get('value'))
+    except Exception as e:
+        error = str(e)
+    return render_template('request_completed.html', jobs=jobs, error=error)
 
 @app.route('/request_all_completed')
 @login_required
@@ -646,13 +1427,59 @@ def request_all_completed():
 @login_required
 @check_access
 def request_failed():
-    return render_template('request_failed.html')
+    # Current user's failed jobs — mirrors /t8 in original
+    jobs = []
+    error = None
+    try:
+        proxy = xmlrpc.client.ServerProxy(app.config['PROXY_QUERY'])
+        new = proxy.LISTREQUEST("FAILED", "ALL", "toto")
+        t = ET.fromstring(new)
+        lines = list(t)[0].findall('line')
+        uid = current_user.username
+        for x in reversed(lines):
+            if x.get('owner') == uid:
+                jobs.append(x.get('value'))
+    except Exception as e:
+        error = str(e)
+    return render_template('request_failed.html', jobs=jobs, error=error)
+
+@app.route('/request_running')
+@login_required
+@check_access
+def request_running():
+    # Current user's running jobs — mirrors /t6 in original
+    jobs = []
+    error = None
+    try:
+        proxy = xmlrpc.client.ServerProxy(app.config['PROXY_QUERY'])
+        new = proxy.LISTREQUEST("RUNNING", "ALL", "toto")
+        t = ET.fromstring(new)
+        lines = list(t)[0].findall('line')
+        uid = current_user.username
+        for x in reversed(lines):
+            if x.get('owner') == uid:
+                jobs.append(x.get('value'))
+    except Exception as e:
+        error = str(e)
+    return render_template('request_running.html', jobs=jobs, error=error)
 
 @app.route('/request_all_failed')
 @login_required
-@check_access
+@admin_required
 def request_all_failed():
-    return render_template('request_all_failed.html')
+    # All users' failed jobs — mirrors /r8 in original (admin only)
+    jobs = []
+    error = None
+    try:
+        proxy = xmlrpc.client.ServerProxy(app.config['PROXY_QUERY'])
+        new = proxy.LISTREQUEST("FAILED", "ALL", "toto")
+        t = ET.fromstring(new)
+        lines = list(t)[0].findall('line')
+        for x in reversed(lines):
+            jobs.append(x.get('value') + " (" + x.get('owner') + ")")
+    except Exception as e:
+        error = str(e)
+    return render_template('request_all_failed.html', jobs=jobs, error=error)
 
 @app.route('/logout')
 @login_required
@@ -678,7 +1505,7 @@ if __name__ == '__main__':
             'ext2dmz_neodma', 'ext2dmz_elsa2dma', 'ext2dmz_excel2dma', 'ext2dmz_elsa2bthtsp',
             'delta_dma', 'delta_tcra',
             'tcra_report', 'tcra_delta_check', 'tcra_delta_dma_check', 'tcra_delta_eng_check',
-            'request_queued', 'request_completed', 'request_all_completed', 'request_failed', 'request_all_failed'
+            'request_queued', 'request_running', 'request_completed', 'request_all_completed', 'request_failed', 'request_all_failed'
         ]
         
         for endpoint in endpoints:

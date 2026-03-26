@@ -9,13 +9,12 @@
             style="margin-top: 20px; margin-bottom: 20px; border-bottom: 1px solid var(--border-color); padding-bottom: 15px;">
             <strong>TCRA Source</strong>
             <div class="form-group" style="margin-top: 10px;">
-                <label for="source_tcra_reference">TCRA reference/revision</label>
-                <input type="text" id="source_tcra_reference" name="source_tcra_reference" class="form-control"
-                    required>
+                <label for="reference_from">TCRA reference/revision</label>
+                <input type="text" id="reference_from" name="reference_from" class="form-control" required>
             </div>
             <div class="form-group">
                 <label>
-                    <input type="checkbox" name="source_on_working"> on working
+                    <input type="checkbox" name="working_from"> on working
                 </label>
             </div>
         </div>
@@ -23,18 +22,24 @@
         <div style="margin-bottom: 20px;">
             <strong>TCRA destination</strong>
             <div class="form-group" style="margin-top: 10px;">
-                <label for="destination_tcra_reference">TCRA reference/revision</label>
-                <input type="text" id="destination_tcra_reference" name="destination_tcra_reference"
-                    class="form-control" required>
+                <label for="reference_to">TCRA reference/revision</label>
+                <input type="text" id="reference_to" name="reference_to" class="form-control" required>
             </div>
             <div class="form-group">
                 <label>
-                    <input type="checkbox" name="destination_on_working"> on working
+                    <input type="checkbox" name="working_to"> on working
                 </label>
             </div>
         </div>
 
         <button type="submit" class="btn" style="width: 100%;">Submit</button>
     </form>
+
+    {% if error %}
+    <div style="margin-top: 1.5rem; padding: 1rem; background: #fff0f0; border-left: 4px solid #d63031; border-radius: 4px;">
+        <strong>Error:</strong>
+        <pre style="margin: 0.5rem 0 0; white-space: pre-wrap; font-size: 0.85rem;">{{ error }}</pre>
+    </div>
+    {% endif %}
 </div>
 {% endblock %}

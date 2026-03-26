@@ -2,36 +2,24 @@
 
 {% block content %}
 <div class="card">
-    <h2>My Completed Requests</h2>
+    <h2>Completed Requests</h2>
     <p style="color: #636e72; margin-bottom: 1.5rem;">
-        Showing your completed jobs.
+        Showing completed jobs for <strong>{{ current_user.username }}</strong>.
     </p>
 
-    {% if jobs %}
-    <table style="width:100%; border-collapse: collapse;">
-        <thead>
-            <tr style="background: var(--secondary-color); text-align: left;">
-                <th style="padding: 10px 12px;">Job Type</th>
-                <th style="padding: 10px 12px;">DMA Ref</th>
-                <th style="padding: 10px 12px;">Rev</th>
-                <th style="padding: 10px 12px;">Options</th>
-                <th style="padding: 10px 12px;">Completed At</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for job in jobs %}
-            <tr style="border-bottom: 1px solid #e0e0e0;">
-                <td style="padding: 10px 12px;">{{ job.job_type }}</td>
-                <td style="padding: 10px 12px;">{{ job.dma_ref }}</td>
-                <td style="padding: 10px 12px;">{{ job.dma_rev }}</td>
-                <td style="padding: 10px 12px; font-family: monospace; font-size: 0.85rem;">{{ job.option }}</td>
-                <td style="padding: 10px 12px; color: #636e72;">{{ job.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
-            </tr>
+    {% if error %}
+    <p style="color: #d63031;">XML-RPC error: {{ error }}</p>
+    {% elif jobs %}
+    <div style="overflow-x: auto;">
+        <select size="15" id="queue_list" style="width: 100%; font-family: monospace; font-size: 0.85rem; padding: 4px;">
+            {% for item in jobs %}
+            <option>{{ item }}</option>
             {% endfor %}
-        </tbody>
-    </table>
+        </select>
+    </div>
     {% else %}
     <p style="color: #636e72;">No completed jobs found.</p>
     {% endif %}
 </div>
+<script>setTimeout(() => location.reload(), 60000);</script>
 {% endblock %}
