@@ -1,12 +1,56 @@
 {% extends "base.html" %}
 
 {% block content %}
-<div class="card" style="max-width: 600px;">
+<div class="card" style="max-width: 800px;">
     <h2 style="margin-bottom: 1rem; color: var(--primary-color);">Welcome, {{ name }}!</h2>
-    <p style="color: #636e72; margin-bottom: 2rem;">
-        You have successfully logged in to your protected dashboard.
-        This content is only visible to authenticated users.
-    </p>
+
+    <!-- Job status section -->
+    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem; margin-bottom: 2rem;">
+
+        <div style="padding: 1.2rem; background: #fff3cd; border: 1px solid #ffc107; border-radius: 8px;">
+            <h3 style="margin-bottom: 0.5rem; color: #856404;">
+                Queued
+                <span style="font-size: 1.2rem; font-weight: bold;">{{ queued_jobs|length }}</span>
+            </h3>
+            {% if queued_jobs %}
+            <ul style="margin: 0; padding-left: 1rem; font-size: 0.8rem; word-break: break-all;">
+                {% for job in queued_jobs %}<li>{{ job }}</li>{% endfor %}
+            </ul>
+            {% else %}
+            <p style="color: #999; font-size: 0.85rem; margin: 0;">No queued jobs</p>
+            {% endif %}
+        </div>
+
+        <div style="padding: 1.2rem; background: #cce5ff; border: 1px solid #004085; border-radius: 8px;">
+            <h3 style="margin-bottom: 0.5rem; color: #004085;">
+                Running
+                <span style="font-size: 1.2rem; font-weight: bold;">{{ running_jobs|length }}</span>
+            </h3>
+            {% if running_jobs %}
+            <ul style="margin: 0; padding-left: 1rem; font-size: 0.8rem; word-break: break-all;">
+                {% for job in running_jobs %}<li>{{ job }}</li>{% endfor %}
+            </ul>
+            {% else %}
+            <p style="color: #999; font-size: 0.85rem; margin: 0;">No running jobs</p>
+            {% endif %}
+        </div>
+
+        <div style="padding: 1.2rem; background: #f8d7da; border: 1px solid #721c24; border-radius: 8px;">
+            <h3 style="margin-bottom: 0.5rem; color: #721c24;">
+                Failed
+                <span style="font-size: 1.2rem; font-weight: bold;">{{ failed_jobs|length }}</span>
+            </h3>
+            {% if failed_jobs %}
+            <ul style="margin: 0; padding-left: 1rem; font-size: 0.8rem; word-break: break-all;">
+                {% for job in failed_jobs %}<li>{{ job }}</li>{% endfor %}
+            </ul>
+            {% else %}
+            <p style="color: #999; font-size: 0.85rem; margin: 0;">No failed jobs</p>
+            {% endif %}
+        </div>
+
+    </div>
+
     <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
         <div style="padding: 1.5rem; background: var(--secondary-color); border-radius: 8px;">
             <h3 style="margin-bottom: 0.5rem;">Profile</h3>

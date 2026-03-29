@@ -17,6 +17,40 @@ from functools import wraps
 from config import config
 
 
+def _save_job(job_type, ref, rev=None):
+    """Persist a job record to the local DB for audit trail."""
+    try:
+        job = Job(
+            user_id=current_user.id,
+            job_type=job_type,
+            dma_ref=ref,
+            dma_rev=rev,
+            status='QUEUED'
+        )
+        db.session.add(job)
+        db.session.commit()
+    except Exception:
+        pass
+
+
+def strip_site_from_job(s):
+    """Strip site prefix from job value string.
+    e.g. '2026_03_26-14_44_57_-BLOCHECKPLMXML-BLO-AK00002472288-B'
+      -> '2026_03_26-14_44_57_-CHECKPLMXML-AK00002472288-B'
+    """
+    m = re.match(r'(\d{4}_\d{2}_\d{2}-\d{2}_\d{2}_\d{2}_-)([A-Z]+)(-.+)', s)
+    if not m:
+        return s
+    prefix, combined, rest = m.group(1), m.group(2), m.group(3)
+    parts = rest.split('-')  # ['', 'BLO', 'AK00002472288', 'B']
+    if len(parts) >= 3 and parts[1] and combined.startswith(parts[1]):
+        site = parts[1]
+        job_type = combined[len(site):]
+        new_rest = '-'.join(parts[2:])
+        return prefix + job_type + '-' + new_rest
+    return s
+
+
 def write_ura_nodes(dst, node, level):
     """Recursively write URA tree nodes to the structured text file."""
     tag = node.tag
@@ -272,7 +306,21 @@ def register():
 @check_access
 def dashboard():
     full_name = f"{current_user.first_name} {current_user.last_name}"
-    return render_template('dashboard.html', name=full_name)
+    uid = current_user.username
+    queued_jobs, running_jobs, failed_jobs = [], [], []
+    try:
+        proxy = xmlrpc.client.ServerProxy(app.config['PROXY_QUERY'])
+        for status, lst in [("QUEUED", queued_jobs), ("RUNNING", running_jobs), ("FAILED", failed_jobs)]:
+            t = ET.fromstring(proxy.LISTREQUEST(status, "ALL", "toto"))
+            for x in reversed(list(t)[0].findall('line')):
+                if x.get('owner') == uid:
+                    lst.append(strip_site_from_job(x.get('value')))
+    except Exception:
+        pass
+    return render_template('dashboard.html', name=full_name,
+                           queued_jobs=queued_jobs,
+                           running_jobs=running_jobs,
+                           failed_jobs=failed_jobs)
 
 @app.route('/check_plm_xml', methods=['GET', 'POST'])
 @login_required
@@ -325,31 +373,29 @@ def check_plm_xml():
             dmaref, dmavers, dmaminor, dmacoid, dmamaturity = eval(result)
 
             if str(dmaref) != "None":
-                # Duplicate-queue check
-                existing = Job.query.filter_by(
-                    user_id=current_user.id,
-                    job_type='CHECKPLMXML',
-                    dma_ref=dma_ref,
-                    dma_rev=dma_rev,
-                    status='QUEUED'
-                ).first()
-                if existing:
-                    flash(f'Request already in queue: Ref={dma_ref}, Rev={dma_rev}', 'warning')
+                # Check spool QUEUED dir for existing request (mirrors old ExportTool check_queued)
+                check_string = dma_ref + '-' + dma_rev
+                queued_found = False
+                try:
+                    queued_dir = os.path.join(app.config['SHARE_SPOOL'], 'QUEUED')
+                    for fname in os.listdir(queued_dir):
+                        if ('CHECKPLMXML' in fname or 'CHECKGSI' in fname) and check_string in fname:
+                            with open(os.path.join(queued_dir, fname), 'r') as qf:
+                                for line in qf:
+                                    if line.split('<>')[1] == uid:
+                                        queued_found = True
+                                        break
+                        if queued_found:
+                            break
+                except Exception:
+                    pass
+
+                if queued_found:
+                    flash(f'Request already in queue: {dma_ref}/{dma_rev}', 'warning')
                     return redirect(url_for('check_plm_xml'))
 
                 proxy.ADMINCHECKPLMXML(uid, dma_ref, dma_rev, request.remote_addr, "0", option, site)
-
-                job = Job(
-                    user_id=current_user.id,
-                    job_type='CHECKPLMXML',
-                    dma_ref=dma_ref,
-                    dma_rev=dma_rev,
-                    option=option,
-                    status='QUEUED'
-                )
-                db.session.add(job)
-                db.session.commit()
-
+                _save_job('CHECKPLMXML', dma_ref, dma_rev)
                 flash(f'CheckPLMXML job queued: Ref={dma_ref}, Rev={dma_rev}, Options={option}, Level={check_lvl}', 'success')
             else:
                 flash(f'DMA reference not found: {dma_ref}/{dma_rev}', 'error')
@@ -433,31 +479,8 @@ def dma_to_team_center():
             dmaref, dmavers, dmaminor, dmacoid, dmamaturity = eval(result)
 
             if str(dmaref) != "None":
-                # Duplicate-queue check
-                existing = Job.query.filter_by(
-                    user_id=current_user.id,
-                    job_type='DMA2PLMXML',
-                    dma_ref=dma_ref,
-                    dma_rev=dma_rev,
-                    status='QUEUED'
-                ).first()
-                if existing:
-                    flash(f'Request already in queue: Ref={dma_ref}, Rev={dma_rev}', 'warning')
-                    return redirect(url_for('dma_to_team_center'))
-
                 proxy.ADMINDMA2PLMXML(uid, dma_ref, dma_rev, request.remote_addr, "0", option, site)
-
-                job = Job(
-                    user_id=current_user.id,
-                    job_type='DMA2PLMXML',
-                    dma_ref=dma_ref,
-                    dma_rev=dma_rev,
-                    option=option,
-                    status='QUEUED'
-                )
-                db.session.add(job)
-                db.session.commit()
-
+                _save_job('DMA2PLMXML', dma_ref, dma_rev)
                 flash(f'DMA2PLMXML job queued: Ref={dma_ref}, Rev={dma_rev}, Options={option}', 'success')
             else:
                 flash(f'DMA reference not found: {dma_ref}/{dma_rev}', 'error')
@@ -492,6 +515,7 @@ def plm_report():
                 export_file = os.path.normpath(os.path.join(app.config['PREPROCESSING_REPORT'], dma_ref))
                 f.save(export_file)
                 proxy.PLMREPORT(uid, dma_ref, dma_rev, request.remote_addr, "0", "-OptionNotUsed")
+                _save_job('PLMREPORT', fn)
                 hyperlink = "file://sacrl1gla2/" + fn[0:3] + "_PLM_Reports/Reports"
                 results.append({'filename': fn, 'hyperlink': hyperlink})
         except Exception as e:
@@ -524,6 +548,7 @@ def eco_design_dma():
             with open(queued_path, "w") as f:
                 f.write(data)
 
+            _save_job('ECODESIGNDMA', reference, revision or None)
             flash(f'Eco Design job queued: {reference}/{revision if revision else "#"}', 'success')
         except Exception as e:
             error = str(e)
@@ -570,6 +595,7 @@ def eco_design_enovia():
             with open(queued_path, "w") as f:
                 f.write(data)
 
+            _save_job('ECODESIGNENOVIA', fn)
             flash(f'Eco Design Enovia job queued: {fn}', 'success')
             return redirect(url_for('eco_design_enovia'))
         except Exception as e:
@@ -613,6 +639,7 @@ def exported3d_dma():
 
             if str(dmaref) != "None":
                 proxy.ADMIN3DFROMDMA(uid, dma_ref, dma_rev, request.remote_addr, "0", option)
+                _save_job('3DFROMDMA', dma_ref, dma_rev)
                 flash(f'3D from DMA job queued: Ref={dma_ref}, Rev={dma_rev}, Options={option}', 'success')
             else:
                 flash(f'DMA reference not found: {dma_ref}/{dma_rev}', 'error')
@@ -645,6 +672,7 @@ def exported3d_tcra():
                 export_file = os.path.normpath(os.path.join(app.config['PREPROCESSING_REPORT'], dma_ref))
                 f.save(export_file)
                 proxy.ADMIN3DFROMTCRA(uid, dma_ref, dma_rev, request.remote_addr, "0", opt_str)
+                _save_job('3DFROMTCRA', fn)
                 hyperlink = "file://sacrl1gla2/" + fn[0:3] + "_PLM_Reports/Reports"
                 results.append({'filename': fn, 'hyperlink': hyperlink})
         except Exception as e:
@@ -679,6 +707,7 @@ def exported3d_report():
 
             proxy = xmlrpc.client.ServerProxy(app.config['PROXY_QUERY'])
             proxy.ADMIN3DFROMDMA(current_user.username, dma_ref, dma_rev, request.remote_addr, "0", option)
+            _save_job('URAREPORT', report_name)
             flash(f'URA report job queued: {report_name}', 'success')
             return redirect(url_for('exported3d_report'))
         except Exception as e:
@@ -770,6 +799,7 @@ def ext2dmz_neodma():
 
             uid_name = uid.split("@")[0].replace("NEO2DMA", "-NEO2DMA")
             proxy.NEOPLMXML(uid_name, dma_ref, dma_rev, request.remote_addr, "0", "-NEO2DMA-")
+            _save_job('NEO2DMA', ref_xml, rev_xml)
             flash(f'NEO2DMA job queued: {ref_xml}/{rev_xml}', 'success')
             return redirect(url_for('ext2dmz_neodma'))
         except Exception as e:
@@ -805,6 +835,7 @@ def ext2dmz_elsa2dma():
             uid = current_user.username
             uid_name = uid.split("@")[0].replace("ELSA2DMA", "-ELSA2DMA")
             proxy.NEOPLMXML(uid_name, dma_ref, dma_rev, request.remote_addr, "0", "-ELSA2DMA-")
+            _save_job('ELSA2DMA', fn)
             flash(f'ELSA2DMA job queued: {fn}', 'success')
             return redirect(url_for('ext2dmz_elsa2dma'))
         except Exception as e:
@@ -840,6 +871,7 @@ def ext2dmz_excel2dma():
             uid = current_user.username
             uid_name = uid.split("@")[0].replace("EXCEL2DMA", "-EXCEL2DMA")
             proxy.NEOPLMXML(uid_name, dma_ref, dma_rev, request.remote_addr, "0", "-EXCEL2DMA-")
+            _save_job('EXCEL2DMA', fn)
             flash(f'EXCEL2DMA job queued: {fn}', 'success')
             return redirect(url_for('ext2dmz_excel2dma'))
         except Exception as e:
@@ -875,6 +907,7 @@ def ext2dmz_elsa2bthtsp():
             uid = current_user.username
             uid_name = uid.split("@")[0].replace("ELSA2BTHTSP", "-ELSA2BTHTSP")
             proxy.NEOPLMXML(uid_name, dma_ref, dma_rev, request.remote_addr, "0", "-ELSA2BTHTSP-")
+            _save_job('ELSA2BTHTSP', fn)
             flash(f'ELSA2BTHTSP job queued: {fn}', 'success')
             return redirect(url_for('ext2dmz_elsa2bthtsp'))
         except Exception as e:
@@ -925,6 +958,7 @@ def delta_dma():
             with open(queued_path, "w") as f:
                 f.write(content)
 
+            _save_job('DELTADMA', reference_from, reference_to)
             flash(f'Delta DMA job queued: {reference_from} → {reference_to}', 'success')
             return redirect(url_for('delta_dma'))
         except Exception as e:
@@ -977,6 +1011,7 @@ def delta_tcra():
             with open(queued_path, "w") as f:
                 f.write(content)
 
+            _save_job('DELTATCRA', reference_from, reference_to)
             flash(f'Delta TCRA job queued: {reference_from} → {reference_to}', 'success')
             return redirect(url_for('delta_tcra'))
         except Exception as e:
@@ -1089,6 +1124,7 @@ def tcra_report():
 
                 proxy = xmlrpc.client.ServerProxy(app.config['PROXY_QUERY'])
                 proxy.TCRAREPORT(uid, config_file_name, "None", request.remote_addr, "0", "-")
+                _save_job('TCRAREPORT', reference)
                 flash(f'TCRA report job queued: {reference}', 'success')
                 return redirect(url_for('tcra_report'))
             except Exception as e:
@@ -1117,6 +1153,7 @@ def tcra_report():
                 uid = current_user.username
                 proxy = xmlrpc.client.ServerProxy(app.config['PROXY_QUERY'])
                 proxy.TCRAREPORT(uid, config_file_name, "None", request.remote_addr, "0", "-")
+                _save_job('TCRAREPORT', reference)
                 flash(f'TCRA complete reports job queued: {reference}', 'success')
                 return redirect(url_for('tcra_report'))
             except Exception as e:
@@ -1203,6 +1240,7 @@ def tcra_delta_check():
 
             proxy = xmlrpc.client.ServerProxy(app.config['PROXY_QUERY'])
             proxy.TCRAREPORT(uid, config_file_name, "None", request.remote_addr, "0", "-")
+            _save_job('TCRADELTA', name_from, name_to)
             flash(f'TCRA delta check job queued: {name_from} → {name_to}', 'success')
             return redirect(url_for('tcra_delta_check'))
         except Exception as e:
@@ -1292,6 +1330,7 @@ def tcra_delta_dma_check():
             py_script = app.config['PY_DELTA_4_INDUS']
             os.system(f'start cmd /c "title DELTA4INDUS & python.exe {py_script} {full_path}"')
 
+            _save_job('TCRADELTADMA', delta_reference)
             flash(f'TCRA delta DMA check launched: {delta_reference}', 'success')
             return redirect(url_for('tcra_delta_dma_check'))
         except Exception as e:
@@ -1359,6 +1398,7 @@ def tcra_delta_eng_check():
             subprocess.Popen([exe, full_path], close_fds=True,
                              creationflags=0x00000200 | 0x00000010)
 
+            _save_job('TCRADELTAENG', delta_reference)
             flash(f'TCRA delta ENG check launched: {delta_reference}', 'success')
             return redirect(url_for('tcra_delta_eng_check'))
         except Exception as e:
@@ -1380,7 +1420,7 @@ def request_queued():
         uid = current_user.username
         for x in reversed(lines):
             if x.get('owner') == uid:
-                jobs.append(x.get('value'))
+                jobs.append(strip_site_from_job(x.get('value')))
     except Exception as e:
         error = str(e)
     return render_template('request_queued.html', jobs=jobs, error=error)
@@ -1400,7 +1440,7 @@ def request_completed():
         uid = current_user.username
         for x in reversed(lines):
             if x.get('owner') == uid:
-                jobs.append(x.get('value'))
+                jobs.append(strip_site_from_job(x.get('value')))
     except Exception as e:
         error = str(e)
     return render_template('request_completed.html', jobs=jobs, error=error)
@@ -1418,7 +1458,7 @@ def request_all_completed():
         t = ET.fromstring(new)
         lines = list(t)[0].findall('line')
         for x in reversed(lines):
-            jobs.append(x.get('value') + " (" + x.get('owner') + ")")
+            jobs.append(strip_site_from_job(x.get('value')) + " (" + x.get('owner') + ")")
     except Exception as e:
         error = str(e)
     return render_template('request_all_completed.html', jobs=jobs, error=error)
@@ -1438,7 +1478,7 @@ def request_failed():
         uid = current_user.username
         for x in reversed(lines):
             if x.get('owner') == uid:
-                jobs.append(x.get('value'))
+                jobs.append(strip_site_from_job(x.get('value')))
     except Exception as e:
         error = str(e)
     return render_template('request_failed.html', jobs=jobs, error=error)
@@ -1458,7 +1498,7 @@ def request_running():
         uid = current_user.username
         for x in reversed(lines):
             if x.get('owner') == uid:
-                jobs.append(x.get('value'))
+                jobs.append(strip_site_from_job(x.get('value')))
     except Exception as e:
         error = str(e)
     return render_template('request_running.html', jobs=jobs, error=error)
@@ -1476,7 +1516,7 @@ def request_all_failed():
         t = ET.fromstring(new)
         lines = list(t)[0].findall('line')
         for x in reversed(lines):
-            jobs.append(x.get('value') + " (" + x.get('owner') + ")")
+            jobs.append(strip_site_from_job(x.get('value')) + " (" + x.get('owner') + ")")
     except Exception as e:
         error = str(e)
     return render_template('request_all_failed.html', jobs=jobs, error=error)
