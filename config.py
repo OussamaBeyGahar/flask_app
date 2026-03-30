@@ -13,6 +13,7 @@ class Config:
     PY_CHECK_BAT_CONTRACT = os.environ.get('PY_CHECK_BAT_CONTRACT', r'\\nasbobcat\bobcat\projects\check_BAT_contract\check_BAT_contract.py')
     PREPROCESSING_REPORT = os.environ.get('PREPROCESSING_REPORT', r'\\nasbobcat\bobcat\data\PREPROCESSING\REPORT')
     SHARE_SPOOL = os.environ.get('SHARE_SPOOL', r'\\nasbobcat\bobcat\data\Spool')
+    EXPORT_TOOL_DB = os.environ.get('EXPORT_TOOL_DB', r'c:\projects\ExportTool\database\export_tools.db')
     SHARE_STANDARD_WORKING = os.environ.get('SHARE_STANDARD_WORKING', r'\\naspoc3d.tnext.loc\CATIA_CACHE\BC_WORKSPACE\PRIVATE\DMAEXPORTTOOL\PBS_CRL.working')
     SHARE_ALTERNATE_WORKING = os.environ.get('SHARE_ALTERNATE_WORKING', r'\\nasbobcat\bobcat\data\AlternateWorking')
     SHARE_DELTA = os.environ.get('SHARE_DELTA', r'\\nasbobcat\bobcat\data\Delta')

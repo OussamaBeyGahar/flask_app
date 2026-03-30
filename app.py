@@ -35,19 +35,37 @@ def _save_job(job_type, ref, rev=None):
 
 def strip_site_from_job(s):
     """Strip site prefix from job value string.
-    e.g. '2026_03_26-14_44_57_-BLOCHECKPLMXML-BLO-AK00002472288-B'
-      -> '2026_03_26-14_44_57_-CHECKPLMXML-AK00002472288-B'
+    Case 1 (uppercase site): '2026_03_26-14_44_57_-BLOCHECKPLMXML-BLO-AK00002472288-B'
+                          -> '2026_03_26-14_44_57_-CHECKPLMXML-AK00002472288-B'
+    Case 2 (site="-"):    '2026_03_30-01_30_21_--CHECKPLMXML---AK00002472288-B'
+                          -> '2026_03_30-01_30_21_-CHECKPLMXML-AK00002472288-B'
     """
-    m = re.match(r'(\d{4}_\d{2}_\d{2}-\d{2}_\d{2}_\d{2}_-)([A-Z]+)(-.+)', s)
+    m = re.match(r'(\d{4}_\d{2}_\d{2}-\d{2}_\d{2}_\d{2}_-)(.*)', s)
     if not m:
         return s
-    prefix, combined, rest = m.group(1), m.group(2), m.group(3)
-    parts = rest.split('-')  # ['', 'BLO', 'AK00002472288', 'B']
-    if len(parts) >= 3 and parts[1] and combined.startswith(parts[1]):
+    prefix = m.group(1)
+    remainder = m.group(2)
+    parts = remainder.split('-')
+
+    # Case 1: uppercase site e.g. ['BLOCHECKPLMXML', 'BLO', 'AK...', 'B']
+    combined = parts[0]
+    if combined and len(parts) >= 3 and parts[1] and combined.startswith(parts[1]):
         site = parts[1]
         job_type = combined[len(site):]
         new_rest = '-'.join(parts[2:])
         return prefix + job_type + '-' + new_rest
+
+    # Case 2: site="-" e.g. ['', 'CHECKPLMXML', '', '', 'AK...', 'B']
+    if combined == '' and len(parts) >= 4:
+        job_type = parts[1]
+        remaining = parts[2:]
+        idx = 0
+        while idx < len(remaining) and remaining[idx] == '':
+            idx += 1
+        if idx < len(remaining):
+            new_rest = '-'.join(remaining[idx:])
+            return prefix + job_type + '-' + new_rest
+
     return s
 
 
@@ -1529,6 +1547,15 @@ def job_report():
     job_name = request.args.get('job', '').strip()
     queue_type = request.args.get('queue', 'COMPLETED').upper()
 
+    # Redirect COMPLETED CHECKPLMXML / CHECKGSI jobs to the treeview
+    clean = job_name
+    paren = clean.find(' (')
+    if paren > 0:
+        clean = clean[:paren]
+    if queue_type == 'COMPLETED' and ('CHECKPLMXML' in clean or 'CHECKGSI' in clean):
+        return redirect(url_for('job_treeview', job=job_name, queue=queue_type))
+
+
     if not job_name:
         return render_template('job_report.html', error='No job name provided.')
 
@@ -1635,6 +1662,109 @@ def job_report():
                            log_lines=log_lines,
                            total_lines=len(log_lines),
                            full_path_log=full_path_log)
+
+
+@app.route('/job_treeview')
+@login_required
+def job_treeview():
+    import checkplm_report as cpr
+    from pathlib import Path
+
+    job_name   = request.args.get('job', '').strip()
+    queue_type = request.args.get('queue', 'COMPLETED').upper()
+
+    if not job_name:
+        return render_template('job_treeview.html', error='No job name provided.')
+
+    # Strip " (owner)" suffix
+    paren = job_name.find(' (')
+    if paren > 0:
+        job_name = job_name[:paren]
+
+    db_path = app.config.get('EXPORT_TOOL_DB', '')
+    conn    = cpr.open_db(db_path)
+    lang    = 'EN'
+
+    # Locate dictinfo_pickled.bin
+    pickle_path, err = cpr.find_pickle(
+        job_name,
+        app.config.get('SHARE_STANDARD_WORKING', ''),
+        app.config.get('SHARE_ALTERNATE_WORKING', '')
+    )
+    if pickle_path is None:
+        return render_template('job_treeview.html',
+                               job_name=job_name, queue_type=queue_type,
+                               error=f'Report data not found: {err}')
+
+    try:
+        data = cpr.load_pickle(pickle_path)
+    except Exception as e:
+        return render_template('job_treeview.html',
+                               job_name=job_name, queue_type=queue_type,
+                               error=f'Failed to load report data: {e}')
+
+    process    = data.get('PROCESS',    'DMABCTOOLS')
+    subprocess_ = data.get('SUBPROCESS', 'GENERIC')
+    reqstr     = data.get('REQSTR',     ['', '', '', ''])
+
+    # Build tree HTML and category lists
+    tree_html, cats = cpr.process_parts(
+        data.get('PARTS', []), process, subprocess_, conn, lang)
+
+    # PPL table
+    ppl_rows, ppl_kpi = cpr.process_ppl(data, conn, lang)
+
+    # Format part lists into table rows
+    fatal_rows   = cpr.format_part_list(cats['part_list_fatal'])
+    warning_rows = cpr.format_part_list(cats['part_list_warning'])
+    info_rows    = cpr.format_part_list(cats['part_list_info'])
+
+    # UI labels (falls back to key if DB unavailable)
+    def lbl(key): return cpr.get_message(conn, key, lang)
+
+    labels = {
+        'btn_no_mat':     lbl('_INTERNAL_TREEVIEW_DisplayPartwithoutMat'),
+        'btn_no_rel':     lbl('_INTERNAL_TREEVIEW_DisplayPartnotreleased'),
+        'btn_wrong_mat':  lbl('_INTERNAL_TREEVIEW_WrongMat'),
+        'btn_wrong_treat':lbl('_INTERNAL_TREEVIEW_WrongTreat'),
+        'btn_mass':       lbl('_INTERNAL_TREEVIEW_DisplayMass'),
+        'btn_no_tag':     lbl('_INTERNAL_TREEVIEW_DisplayPartwithoutTag'),
+        'btn_ppl':        lbl('_INTERNAL_TREEVIEW_DisplayPPL'),
+        'btn_flat':       lbl('_INTERNAL_TREEVIEW_Flat_Report'),
+        'th_no_mat':      lbl('_INTERNAL_TREEVIEW_Partwithoutmaterial'),
+        'th_no_rel':      lbl('_INTERNAL_TREEVIEW_Partnotreleased'),
+        'th_mass':        lbl('_INTERNAL_TREEVIEW_PartMass'),
+        'th_no_tag':      lbl('_INTERNAL_TREEVIEW_PartwithoutTag'),
+        'th_part':        lbl('_INTERNAL_TREEVIEW_Part'),
+        'th_mat':         lbl('_INTERNAL_TREEVIEW_Mat'),
+        'th_treatment':   lbl('_INTERNAL_TREEVIEW_Treatment'),
+        'th_designation': lbl('_INTERNAL_TREEVIEW_Designation'),
+        'th_std':         lbl('_INTERNAL_TREEVIEW_STD'),
+        'th_component':   lbl('_INTERNAL_TREEVIEW_Component'),
+        'th_assy':        lbl('_INTERNAL_TREEVIEW_Assy'),
+        'lbl_report':     lbl('_INTERNAL_TREEVIEW_report'),
+        'lbl_user':       lbl('_INTERNAL_TREEVIEW_User'),
+    }
+
+    if conn:
+        conn.close()
+
+    return render_template('job_treeview.html',
+        job_name   = job_name,
+        queue_type = queue_type,
+        tree_html  = tree_html,
+        cats       = cats,
+        ppl_rows   = ppl_rows,
+        ppl_kpi    = ppl_kpi,
+        fatal_rows   = fatal_rows,
+        warning_rows = warning_rows,
+        info_rows    = info_rows,
+        result_process = reqstr[0] if len(reqstr) > 0 else '',
+        result_part    = f'{reqstr[2]}-{reqstr[3]}' if len(reqstr) > 3 else '',
+        result_user    = reqstr[1] if len(reqstr) > 1 else '',
+        labels = labels,
+        full_path_log = str(pickle_path) if current_user.is_admin else None,
+    )
 
 
 @app.route('/logout')

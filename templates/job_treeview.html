@@ -1,0 +1,186 @@
+{% extends "base.html" %}
+
+{% block content %}
+<style>
+  /* ── layout ── */
+  #tv-wrap       { display:flex; flex-direction:column; height:calc(100vh - 120px); font-family:Arial,sans-serif; }
+  #tv-toolbar    { flex:0 0 auto; padding:8px 12px; background:#e6eeff;
+                   border-bottom:2px solid #aac; display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
+  #tv-body       { display:flex; flex:1; overflow:hidden; }
+  #tv-tree       { flex:0 0 50%; overflow:auto; padding:10px; background:#f0f4ff; border-right:2px solid #aac; }
+  #tv-tables     { flex:0 0 50%; overflow:auto; padding:10px; background:#fafafa; }
+
+  /* ── toolbar info ── */
+  .tv-info       { font-size:13px; margin-right:16px; }
+
+  /* ── buttons ── */
+  .tv-btn { background:#668cff; border:none; color:#fff; padding:7px 10px;
+            font-size:13px; border-radius:6px; cursor:pointer; }
+  .tv-btn:disabled { opacity:.4; cursor:not-allowed; }
+  .tv-btn.active   { background:#ff9900; }
+  .tv-btn.fatal    { background:#c0392b; }
+  .tv-btn.warning  { background:#e67e22; }
+  .tv-btn.info-btn { background:#2980b9; }
+
+  /* ── treeview (port of treeview.css) ── */
+  .css-treeview ul, .css-treeview li { padding:0; margin:6px 0; list-style:none; }
+  .css-treeview input               { position:absolute; opacity:0; }
+  .css-treeview                     { font:normal 14px "Segoe UI",Arial,sans-serif; }
+  .css-treeview input + label + ul  { margin:0 0 0 22px; }
+  .css-treeview input ~ ul          { display:none; }
+  .css-treeview label               { cursor:pointer; }
+  .css-treeview input:checked ~ ul  { display:block; }
+
+  /* ── result tables ── */
+  .tv-table { display:none; border-collapse:collapse; width:100%; font-size:12px; margin-top:8px; }
+  .tv-table th { background:#4a90d9; color:#fff; padding:5px 8px; text-align:left; }
+  .tv-table td { border:1px solid #ddd; padding:4px 8px; cursor:pointer; }
+  .tv-table tr:nth-child(even) td { background:#f0f4ff; }
+  .tv-table tr:hover td { background:#ffe0a0; }
+</style>
+
+{% if error %}
+<div class="card">
+  <h2 style="color:var(--primary-color);">Treeview — {{ job_name }}</h2>
+  <div style="padding:1rem;background:#f8d7da;border-radius:6px;color:#721c24;">{{ error }}</div>
+</div>
+
+{% else %}
+<div id="tv-wrap">
+
+  <!-- ── toolbar ── -->
+  <div id="tv-toolbar">
+    <span class="tv-info">
+      <b>{{ result_process }}</b> {{ labels.lbl_report }}
+      &nbsp;|&nbsp; {{ labels.th_part }}: <b>{{ result_part }}</b>
+      &nbsp;|&nbsp; {{ labels.lbl_user }}: <b>{{ result_user }}</b>
+      {% if full_path_log %}&nbsp;|&nbsp; <span style="font-size:11px;color:#888;">{{ full_path_log }}</span>{% endif %}
+    </span>
+
+    <button class="tv-btn" id="btn-PartNoMat"   onclick="toggle('PartNoMat')"   {% if not cats.nomaterial %}disabled{% endif %}>{{ labels.btn_no_mat }}</button>
+    <button class="tv-btn" id="btn-PartNoRel"   onclick="toggle('PartNoRel')"   {% if not cats.noreleased %}disabled{% endif %}>{{ labels.btn_no_rel }}</button>
+    <button class="tv-btn" id="btn-WrongMat"    onclick="toggle('WrongMat')"    {% if not cats.wrongmat %}disabled{% endif %}>{{ labels.btn_wrong_mat }}</button>
+    <button class="tv-btn" id="btn-WrongTreat"  onclick="toggle('WrongTreat')"  {% if not cats.wrongtreat %}disabled{% endif %}>{{ labels.btn_wrong_treat }}</button>
+    <button class="tv-btn" id="btn-Mass0"       onclick="toggle('Mass0')"       {% if not cats.nomass %}disabled{% endif %}>{{ labels.btn_mass }}</button>
+    <button class="tv-btn" id="btn-PartNoTag"   onclick="toggle('PartNoTag')"   {% if not cats.notag %}disabled{% endif %}>{{ labels.btn_no_tag }}</button>
+    <button class="tv-btn" id="btn-PPL"         onclick="toggle('PPL')"         {% if not ppl_rows %}disabled{% endif %}>{{ labels.btn_ppl }}</button>
+    &nbsp;
+    <button class="tv-btn fatal"    id="btn-PartFATAL"   onclick="toggle('PartFATAL')"   {% if not fatal_rows %}disabled{% endif %}>FATAL</button>
+    <button class="tv-btn warning"  id="btn-PartWARNING" onclick="toggle('PartWARNING')" {% if not warning_rows %}disabled{% endif %}>WARNING</button>
+    <button class="tv-btn info-btn" id="btn-PartINFO"    onclick="toggle('PartINFO')"    {% if not info_rows %}disabled{% endif %}>INFO</button>
+  </div>
+
+  <!-- ── body ── -->
+  <div id="tv-body">
+
+    <!-- Left: collapsible tree -->
+    <div id="tv-tree">
+      <div class="css-treeview">
+        <ul>{{ tree_html | safe }}</ul>
+      </div>
+    </div>
+
+    <!-- Right: data tables -->
+    <div id="tv-tables">
+
+      <table class="tv-table" id="table-PartNoMat">
+        <tr><th>{{ labels.th_no_mat }}</th></tr>
+        {% for row in cats.nomaterial %}<tr><td onclick="jumpTo('{{ row }}')">{{ row }}</td></tr>{% endfor %}
+      </table>
+
+      <table class="tv-table" id="table-PartNoRel">
+        <tr><th>{{ labels.th_no_rel }}</th></tr>
+        {% for row in cats.noreleased %}<tr><td onclick="jumpTo('{{ row }}')">{{ row }}</td></tr>{% endfor %}
+      </table>
+
+      <table class="tv-table" id="table-WrongMat">
+        <tr><th>{{ labels.th_part }}</th><th>{{ labels.th_mat }}</th></tr>
+        {% for row in cats.wrongmat %}<tr><td onclick="jumpTo('{{ row }}')">{{ row }}</td></tr>{% endfor %}
+      </table>
+
+      <table class="tv-table" id="table-WrongTreat">
+        <tr><th>{{ labels.th_part }}</th><th>{{ labels.th_treatment }}</th></tr>
+        {% for row in cats.wrongtreat %}<tr><td onclick="jumpTo('{{ row }}')">{{ row }}</td></tr>{% endfor %}
+      </table>
+
+      <table class="tv-table" id="table-Mass0">
+        <tr><th>{{ labels.th_mass }}</th></tr>
+        {% for row in cats.nomass %}<tr><td onclick="jumpTo('{{ row }}')">{{ row }}</td></tr>{% endfor %}
+      </table>
+
+      <table class="tv-table" id="table-PartNoTag">
+        <tr><th>{{ labels.th_assy }}</th><th>{{ labels.th_component }}</th></tr>
+        {% for row in cats.notag %}<tr><td onclick="jumpTo('{{ row }}')">{{ row }}</td></tr>{% endfor %}
+      </table>
+
+      <table class="tv-table" id="table-PPL">
+        {% for row in ppl_kpi %}{{ row | safe }}{% endfor %}
+        <tr><th>{{ labels.th_part }}</th><th>{{ labels.th_designation }}</th><th>{{ labels.th_std }}</th></tr>
+        {% for row in ppl_rows %}{{ row | safe }}{% endfor %}
+      </table>
+
+      <table class="tv-table" id="table-PartFATAL">
+        <tr><th>FATAL</th></tr>
+        {% for row in fatal_rows %}{{ row | safe }}{% endfor %}
+      </table>
+
+      <table class="tv-table" id="table-PartWARNING">
+        <tr><th>WARNING</th></tr>
+        {% for row in warning_rows %}{{ row | safe }}{% endfor %}
+      </table>
+
+      <table class="tv-table" id="table-PartINFO">
+        <tr><th>INFO</th></tr>
+        {% for row in info_rows %}{{ row | safe }}{% endfor %}
+      </table>
+
+    </div><!-- tv-tables -->
+  </div><!-- tv-body -->
+</div><!-- tv-wrap -->
+
+<script>
+const allBtns   = ['PartNoMat','PartNoRel','WrongMat','WrongTreat','Mass0','PartNoTag','PPL',
+                   'PartFATAL','PartWARNING','PartINFO'];
+const activeBtn = {};
+allBtns.forEach(id => activeBtn[id] = false);
+
+function toggle(id) {
+  const newState = !activeBtn[id];
+  // hide all
+  allBtns.forEach(b => {
+    activeBtn[b] = false;
+    const tbl = document.getElementById('table-' + b);
+    const btn = document.getElementById('btn-'   + b);
+    if (tbl) tbl.style.display = 'none';
+    if (btn) btn.classList.remove('active');
+  });
+  // show selected
+  if (newState) {
+    activeBtn[id] = true;
+    const tbl = document.getElementById('table-' + id);
+    const btn = document.getElementById('btn-'   + id);
+    if (tbl) tbl.style.display = 'table';
+    if (btn) btn.classList.add('active');
+  }
+}
+
+function jumpTo(partId) {
+  const el = document.getElementById(partId);
+  if (el) {
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    // briefly highlight
+    el.style.outline = '3px solid #ff9900';
+    setTimeout(() => el.style.outline = '', 2000);
+  }
+}
+
+// Auto-show highest priority list on load
+window.addEventListener('DOMContentLoaded', () => {
+  for (const id of ['PartFATAL', 'PartWARNING', 'PartINFO']) {
+    const btn = document.getElementById('btn-' + id);
+    if (btn && !btn.disabled) { toggle(id); break; }
+  }
+});
+</script>
+{% endif %}
+{% endblock %}
