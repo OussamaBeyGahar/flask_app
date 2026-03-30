@@ -65,34 +65,38 @@ def get_error_definition(conn, error_id, process, subprocess, type_error, langua
 def find_pickle(job_name, standard_working, alternate_working):
     """
     Find dictinfo_pickled.bin for a completed CHECKPLMXML job.
-    Mirrors the .path file lookup in display_check_plm().
     Returns (path_to_pickle, error_string).
     """
     for base in [standard_working, alternate_working]:
         if not base:
             continue
-        job_dir = Path(base) / job_name
-        path_file = job_dir / (job_name + '.path')
 
-        if not path_file.exists():
-            # also try working sub-dir
-            alt = Path(base) / 'working' / job_name / (job_name + '.path')
-            if alt.exists():
-                path_file = alt
-                job_dir = alt.parent
+        # Strategy 1: direct path — {base}/{job_name}/build/dictinfo_pickled.bin
+        # This mirrors what t12 does with reportfolder directly.
+        direct = Path(base) / job_name / 'build' / 'dictinfo_pickled.bin'
+        if direct.exists():
+            return direct, None
 
-        if path_file.exists():
+        # Strategy 2: follow the .path file, but use only the folder name from it
+        # to avoid doubling the share name (path file stores local drive path).
+        for candidate_dir in [
+            Path(base) / job_name,
+            Path(base) / 'working' / job_name,
+        ]:
+            path_file = candidate_dir / (job_name + '.path')
+            if not path_file.exists():
+                continue
             try:
                 with open(path_file, encoding='latin-1') as f:
-                    my_path = f.readline().strip()
-                # Strip drive letter, keep the rest
-                slash = my_path.find('/')
-                if slash >= 0:
-                    my_path = my_path[slash:]
+                    my_path = f.readline().strip().replace('\\', '/')
                 if my_path.startswith('//'):
+                    # UNC path — use directly
                     pickle_path = Path(my_path) / 'build' / 'dictinfo_pickled.bin'
                 else:
-                    pickle_path = Path(base) / my_path.lstrip('/') / 'build' / 'dictinfo_pickled.bin'
+                    # Local/mapped path like "B:/PBS_CRL.working/job_folder"
+                    # Extract just the last folder component and combine with base
+                    folder = Path(my_path).name or job_name
+                    pickle_path = Path(base) / folder / 'build' / 'dictinfo_pickled.bin'
                 if pickle_path.exists():
                     return pickle_path, None
             except Exception as e:
