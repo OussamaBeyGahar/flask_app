@@ -394,7 +394,7 @@ def check_plm_xml():
                     flash(f'Request already in queue: {dma_ref}/{dma_rev}', 'warning')
                     return redirect(url_for('check_plm_xml'))
 
-                proxy.ADMINCHECKPLMXML(uid, dma_ref, dma_rev, request.remote_addr, "0", option, site)
+                proxy.ADMINCHECKPLMXML(uid, dma_ref, dma_rev, request.remote_addr, "0", option, "-")
                 _save_job('CHECKPLMXML', dma_ref, dma_rev)
                 flash(f'CheckPLMXML job queued: Ref={dma_ref}, Rev={dma_rev}, Options={option}, Level={check_lvl}', 'success')
             else:
@@ -1520,6 +1520,122 @@ def request_all_failed():
     except Exception as e:
         error = str(e)
     return render_template('request_all_failed.html', jobs=jobs, error=error)
+
+@app.route('/job_report')
+@login_required
+def job_report():
+    from pathlib import Path
+
+    job_name = request.args.get('job', '').strip()
+    queue_type = request.args.get('queue', 'COMPLETED').upper()
+
+    if not job_name:
+        return render_template('job_report.html', error='No job name provided.')
+
+    # Strip " (owner)" suffix that admin list views append
+    paren = job_name.find(' (')
+    if paren > 0:
+        job_name = job_name[:paren]
+
+    # Read spool file for request metadata
+    reqtype = job_name
+    reqowner = ''
+    config_preprocessing = ''
+    try:
+        spool_file = os.path.join(app.config['SHARE_SPOOL'], queue_type, job_name)
+        with open(spool_file, 'r', encoding='latin-1') as f:
+            reqparams = f.readline().split('<>')
+            reqtype            = reqparams[0] if len(reqparams) > 0 else job_name
+            reqowner           = reqparams[1] if len(reqparams) > 1 else ''
+            config_preprocessing = reqparams[2] if len(reqparams) > 2 else ''
+    except Exception:
+        pass
+
+    # Search for Process.log across working directories and fallback strategies
+    path_process = None
+    for working in [app.config.get('SHARE_STANDARD_WORKING', ''),
+                    app.config.get('SHARE_ALTERNATE_WORKING', '')]:
+        if not working:
+            continue
+
+        # Strategy 1: {working}/{job_name}/Process.log
+        p = Path(working) / job_name / 'Process.log'
+        if p.exists():
+            path_process = p
+            break
+
+        # Strategy 2: {working}/{configPreprocessing}/Process.log
+        if config_preprocessing:
+            p = Path(working) / config_preprocessing / 'Process.log'
+            if p.exists():
+                path_process = p
+                break
+
+        # Strategy 3: {working}/{job_name}/{job_name}.path → follow the path
+        path_file = Path(working) / job_name / (job_name + '.path')
+        if path_file.exists():
+            try:
+                with open(path_file, 'r', encoding='latin-1') as f:
+                    stored = Path(f.readline().strip())
+                p = stored.parent / 'Process.log'
+                if p.exists():
+                    path_process = p
+                    break
+            except Exception:
+                pass
+
+        # Strategy 4: walk subdirs of {working}/{job_name} for configPreprocessing
+        if config_preprocessing:
+            root_dir = Path(working) / job_name
+            if root_dir.exists():
+                try:
+                    for _, dirs, _ in os.walk(str(root_dir)):
+                        for d in dirs:
+                            if config_preprocessing in d:
+                                p = root_dir / d / 'Process.log'
+                                if p.exists():
+                                    path_process = p
+                                break
+                        break
+                except Exception:
+                    pass
+        if path_process:
+            break
+
+    if path_process is None or not path_process.exists():
+        return render_template('job_report.html',
+                               job_name=job_name,
+                               queue_type=queue_type,
+                               reqtype=reqtype,
+                               reqowner=reqowner,
+                               error='Process.log not found for this job.')
+
+    try:
+        with open(path_process, 'r', encoding='latin-1') as f:
+            log_lines = f.read().splitlines()
+        time_log = time.strftime('%d/%m/%Y %H:%M:%S',
+                                 time.localtime(os.path.getctime(str(path_process))))
+        report_title = reqtype.split('-')[0] + ' Report'
+        full_path_log = str(path_process) if current_user.is_admin else None
+    except Exception as e:
+        return render_template('job_report.html',
+                               job_name=job_name,
+                               queue_type=queue_type,
+                               reqtype=reqtype,
+                               reqowner=reqowner,
+                               error=f'Error reading log: {e}')
+
+    return render_template('job_report.html',
+                           job_name=job_name,
+                           queue_type=queue_type,
+                           report_title=report_title,
+                           reqtype=reqtype,
+                           reqowner=reqowner,
+                           time_log=time_log,
+                           log_lines=log_lines,
+                           total_lines=len(log_lines),
+                           full_path_log=full_path_log)
+
 
 @app.route('/logout')
 @login_required

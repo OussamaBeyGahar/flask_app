@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="card" style="max-width: 960px;">
+
+    <h2 style="margin-bottom: 0.5rem; color: var(--primary-color);">
+        {{ report_title or job_name }}
+    </h2>
+
+    <p style="font-size: 0.85rem; color: #636e72; margin-bottom: 1.5rem;">
+        Status: <strong>{{ queue_type }}</strong>
+        {% if reqowner %} &nbsp;|&nbsp; Requested by: <strong>{{ reqowner }}</strong>{% endif %}
+        {% if time_log %} &nbsp;|&nbsp; Log date: <strong>{{ time_log }}</strong>{% endif %}
+        {% if total_lines is defined %} &nbsp;|&nbsp; Lines: <strong>{{ total_lines }}</strong>{% endif %}
+    </p>
+
+    {% if full_path_log %}
+    <p style="font-size: 0.78rem; color: #b2bec3; margin-bottom: 1rem; font-family: monospace;">{{ full_path_log }}</p>
+    {% endif %}
+
+    {% if error %}
+    <div style="padding: 1rem; background: #f8d7da; border-radius: 6px; color: #721c24;">
+        {{ error }}
+    </div>
+
+    {% elif log_lines %}
+    <div style="overflow-x: auto; overflow-y: auto; max-height: 75vh;
+                border: 1px solid var(--border-color); border-radius: 4px;
+                padding: 8px 12px; background: #1e1e1e; color: #d4d4d4;">
+        <pre style="margin: 0; font-family: monospace; font-size: 0.82rem; white-space: pre-wrap; word-break: break-all;">{% for line in log_lines %}{{ line }}
+{% endfor %}</pre>
+    </div>
+
+    {% else %}
+    <p style="color: #636e72;">Log file is empty.</p>
+    {% endif %}
+
+</div>
+{% endblock %}
