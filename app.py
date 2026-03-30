@@ -1438,7 +1438,8 @@ def request_queued():
         uid = current_user.username
         for x in reversed(lines):
             if x.get('owner') == uid:
-                jobs.append(strip_site_from_job(x.get('value')))
+                raw = x.get('value')
+                jobs.append({'raw': raw, 'display': strip_site_from_job(raw)})
     except Exception as e:
         error = str(e)
     return render_template('request_queued.html', jobs=jobs, error=error)
@@ -1458,7 +1459,8 @@ def request_completed():
         uid = current_user.username
         for x in reversed(lines):
             if x.get('owner') == uid:
-                jobs.append(strip_site_from_job(x.get('value')))
+                raw = x.get('value')
+                jobs.append({'raw': raw, 'display': strip_site_from_job(raw)})
     except Exception as e:
         error = str(e)
     return render_template('request_completed.html', jobs=jobs, error=error)
@@ -1476,7 +1478,8 @@ def request_all_completed():
         t = ET.fromstring(new)
         lines = list(t)[0].findall('line')
         for x in reversed(lines):
-            jobs.append(strip_site_from_job(x.get('value')) + " (" + x.get('owner') + ")")
+            raw = x.get('value')
+            jobs.append({'raw': raw, 'display': strip_site_from_job(raw), 'owner': x.get('owner')})
     except Exception as e:
         error = str(e)
     return render_template('request_all_completed.html', jobs=jobs, error=error)
@@ -1496,7 +1499,8 @@ def request_failed():
         uid = current_user.username
         for x in reversed(lines):
             if x.get('owner') == uid:
-                jobs.append(strip_site_from_job(x.get('value')))
+                raw = x.get('value')
+                jobs.append({'raw': raw, 'display': strip_site_from_job(raw)})
     except Exception as e:
         error = str(e)
     return render_template('request_failed.html', jobs=jobs, error=error)
@@ -1516,7 +1520,8 @@ def request_running():
         uid = current_user.username
         for x in reversed(lines):
             if x.get('owner') == uid:
-                jobs.append(strip_site_from_job(x.get('value')))
+                raw = x.get('value')
+                jobs.append({'raw': raw, 'display': strip_site_from_job(raw)})
     except Exception as e:
         error = str(e)
     return render_template('request_running.html', jobs=jobs, error=error)
@@ -1534,7 +1539,8 @@ def request_all_failed():
         t = ET.fromstring(new)
         lines = list(t)[0].findall('line')
         for x in reversed(lines):
-            jobs.append(strip_site_from_job(x.get('value')) + " (" + x.get('owner') + ")")
+            raw = x.get('value')
+            jobs.append({'raw': raw, 'display': strip_site_from_job(raw), 'owner': x.get('owner')})
     except Exception as e:
         error = str(e)
     return render_template('request_all_failed.html', jobs=jobs, error=error)
@@ -1676,10 +1682,13 @@ def job_treeview():
     if not job_name:
         return render_template('job_treeview.html', error='No job name provided.')
 
-    # Strip " (owner)" suffix
+    # Strip " (owner)" suffix (fallback for old-style links)
     paren = job_name.find(' (')
     if paren > 0:
         job_name = job_name[:paren]
+
+    # Display name strips embedded site from the raw spool name
+    display_name = strip_site_from_job(job_name)
 
     db_path = app.config.get('EXPORT_TOOL_DB', '')
     conn    = cpr.open_db(db_path)
@@ -1750,7 +1759,7 @@ def job_treeview():
         conn.close()
 
     return render_template('job_treeview.html',
-        job_name   = job_name,
+        job_name   = display_name,
         queue_type = queue_type,
         tree_html  = tree_html,
         cats       = cats,
