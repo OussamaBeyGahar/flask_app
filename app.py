@@ -1694,11 +1694,11 @@ def job_treeview():
     conn    = cpr.open_db(db_path)
     lang    = 'EN'
 
-    # Locate dictinfo_pickled.bin
+    # Locate dictinfo_pickled.bin — mirrors original display_check_plm path logic
     pickle_path, err = cpr.find_pickle(
         job_name,
-        app.config.get('SHARE_STANDARD_WORKING', ''),
-        app.config.get('SHARE_ALTERNATE_WORKING', '')
+        app.config.get('PROXY_PATH_FOR_PICKLE_1', ''),
+        app.config.get('PROXY_PATH_FOR_PICKLE_2', '')
     )
     if pickle_path is None:
         return render_template('job_treeview.html',

@@ -62,99 +62,96 @@ def get_error_definition(conn, error_id, process, subprocess, type_error, langua
 # Pickle + path resolution
 # ──────────────────────────────────────────────
 
-def _read_path_file(path_file, base):
+def _follow_path_file(file_check_path, pickle_1):
     """
     Read a .path file and return the pickle path.
-    Mirrors the original t12 logic:
-      - strip drive letter → /PBS_CRL.working/folder
-      - if UNC (//…): use directly
-      - else: base_parent + stripped_path + /build/dictinfo_pickled.bin
-    base is SHARE_STANDARD_WORKING which already includes PBS_CRL.working,
-    so base_parent = Path(base).parent = …/DMAEXPORTTOOL (≡ PROXY_PATH_FOR_PICKLE_1).
+    Exact port of original display_check_plm logic:
+      my_path = first line with drive letter stripped
+      if UNC (starts //) → my_path + /build/dictinfo_pickled.bin
+      else               → PROXY_PATH_FOR_PICKLE_1 + my_path + /build/dictinfo_pickled.bin
     Returns Path or None.
     """
     try:
-        with open(path_file, encoding='latin-1') as f:
-            my_path = f.readline().strip().replace('\\', '/')
+        with open(file_check_path, encoding='latin-1') as f:
+            my_path = f.readline().strip()
         slash = my_path.find('/')
         if slash < 0:
             return None
-        my_path = my_path[slash:]          # strip drive letter → /PBS_CRL.working/folder
+        my_path = my_path[slash:]   # strip drive letter e.g. "B:" → "/PBS_CRL.working/job"
         if my_path.startswith('//'):
             return Path(my_path) / 'build' / 'dictinfo_pickled.bin'
-        # Reconstruct UNC via parent of base (= PROXY_PATH_FOR_PICKLE_1)
-        pickle_path = Path(base).parent / my_path.lstrip('/') / 'build' / 'dictinfo_pickled.bin'
-        return pickle_path
+        return Path(pickle_1 + my_path) / 'build' / 'dictinfo_pickled.bin'
     except Exception:
         return None
 
 
-def find_pickle(job_name, standard_working, alternate_working):
+def find_pickle(job_name, pickle_1, pickle_2):
     """
-    Find dictinfo_pickled.bin for a completed CHECKPLMXML job.
-    Mirrors the original display_check_plm logic exactly.
+    Find dictinfo_pickled.bin — exact port of original display_check_plm 3-strategy search.
+    pickle_1 = PROXY_PATH_FOR_PICKLE_1  (e.g. //naspoc3d…/DMAEXPORTTOOL)
+    pickle_2 = PROXY_PATH_FOR_PICKLE_2  (e.g. //nasbobcat/bobcat/data)
     Returns (path_to_pickle, error_string).
     """
+    # pth mirrors original: reportfolder "B:/PBS_CRL.working/{job_name}"
+    #   → pth = "/PBS_CRL.working/{job_name}"
+    pth = '/PBS_CRL.working/' + job_name
+    curr_request = job_name
     tried = []
 
-    for base in [standard_working, alternate_working]:
-        if not base:
-            continue
+    # Strategy 1 — PROXY_PATH_FOR_PICKLE_1 + pth
+    if pickle_1:
+        req_path = pickle_1 + pth
+        file_check = req_path + '/' + curr_request + '.path'
+        tried.append(file_check)
+        if os.path.isfile(file_check):
+            pickle_path = _follow_path_file(file_check, pickle_1)
+            if pickle_path and pickle_path.exists():
+                return pickle_path, None
 
-        # ── Strategy 1: exact .path file (mirrors original t12) ─────────────
-        # Original: req_path = PROXY_PATH_FOR_PICKLE_1 + /PBS_CRL.working/{job_name}
-        #           fileCheckPath = req_path/{job_name}.path
-        # Equivalent: {SHARE_STANDARD_WORKING}/{job_name}/{job_name}.path
-        for job_dir in [Path(base) / job_name,
-                        Path(base) / 'working' / job_name]:
-            path_file = job_dir / (job_name + '.path')
-            tried.append(str(path_file))
-            if path_file.exists():
-                pickle_path = _read_path_file(path_file, base)
-                if pickle_path and pickle_path.exists():
-                    return pickle_path, None
-                # .path found but pickle not there — try direct build/ too
-                direct = job_dir / 'build' / 'dictinfo_pickled.bin'
-                tried.append(str(direct))
+    # Strategy 2 — PROXY_PATH_FOR_PICKLE_2 + pth
+    if pickle_2:
+        req_path = pickle_2 + pth
+        file_check = req_path + '/' + curr_request + '.path'
+        tried.append(file_check)
+        if os.path.isfile(file_check):
+            pickle_path = _follow_path_file(file_check, pickle_1)
+            if pickle_path and pickle_path.exists():
+                return pickle_path, None
+
+        # Strategy 3 — PROXY_PATH_FOR_PICKLE_2 + /working/{job_name}
+        file_check = os.path.join(pickle_2, 'working', curr_request, curr_request + '.path')
+        tried.append(file_check)
+        if os.path.isfile(file_check):
+            pickle_path = _follow_path_file(file_check, pickle_1)
+            if pickle_path and pickle_path.exists():
+                return pickle_path, None
+
+    # Fallback: glob — handles display/stripped name (job name without embedded site)
+    import re as _re
+    m = _re.match(r'(\d{4}_\d{2}_\d{2}-\d{2}_\d{2}_\d{2}_)', job_name)
+    if m and pickle_1:
+        ts = m.group(1)
+        ref_part = job_name.split('-')[-2] if job_name.count('-') >= 2 else ''
+        try:
+            base = Path(pickle_1) / 'PBS_CRL.working'
+            for d in base.iterdir():
+                if not d.is_dir() or not d.name.startswith(ts):
+                    continue
+                if ref_part and ref_part not in d.name:
+                    continue
+                dname = d.name
+                file_check = str(d / (dname + '.path'))
+                if os.path.isfile(file_check):
+                    pickle_path = _follow_path_file(file_check, pickle_1)
+                    if pickle_path and pickle_path.exists():
+                        return pickle_path, None
+                direct = d / 'build' / 'dictinfo_pickled.bin'
                 if direct.exists():
                     return direct, None
+        except Exception:
+            pass
 
-        # ── Strategy 2: direct build/ (no .path needed) ──────────────────────
-        direct = Path(base) / job_name / 'build' / 'dictinfo_pickled.bin'
-        tried.append(str(direct))
-        if direct.exists():
-            return direct, None
-
-        # ── Strategy 3: glob — handles stripped/display name ─────────────────
-        # Extract timestamp prefix and ref/rev from job_name so we can locate
-        # the actual raw-named directory even when the job name was stripped.
-        import re as _re
-        m = _re.match(r'(\d{4}_\d{2}_\d{2}-\d{2}_\d{2}_\d{2}_)', job_name)
-        if m:
-            ts = m.group(1)
-            try:
-                for d in Path(base).iterdir():
-                    if not d.is_dir():
-                        continue
-                    dname = d.name
-                    if not dname.startswith(ts):
-                        continue
-                    # Check if the ref part of job_name appears in this dir name
-                    ref_part = job_name.split('-')[-2] if job_name.count('-') >= 2 else ''
-                    if ref_part and ref_part not in dname:
-                        continue
-                    path_file = d / (dname + '.path')
-                    if path_file.exists():
-                        pickle_path = _read_path_file(path_file, base)
-                        if pickle_path and pickle_path.exists():
-                            return pickle_path, None
-                    direct = d / 'build' / 'dictinfo_pickled.bin'
-                    if direct.exists():
-                        return direct, None
-            except Exception:
-                pass
-
-    return None, 'dictinfo_pickled.bin not found (tried: ' + '; '.join(tried[:6]) + ')'
+    return None, 'dictinfo_pickled.bin not found (tried: ' + '; '.join(tried) + ')'
 
 
 def load_pickle(pickle_path):
