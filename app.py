@@ -1586,6 +1586,7 @@ def job_report():
 
     # Search for Process.log across working directories and fallback strategies
     path_process = None
+    tried_paths = []
     for working in [app.config.get('SHARE_STANDARD_WORKING', ''),
                     app.config.get('SHARE_ALTERNATE_WORKING', '')]:
         if not working:
@@ -1593,6 +1594,7 @@ def job_report():
 
         # Strategy 1: {working}/{job_name}/Process.log
         p = Path(working) / job_name / 'Process.log'
+        tried_paths.append(str(p))
         if p.exists():
             path_process = p
             break
@@ -1600,22 +1602,38 @@ def job_report():
         # Strategy 2: {working}/{configPreprocessing}/Process.log
         if config_preprocessing:
             p = Path(working) / config_preprocessing / 'Process.log'
+            tried_paths.append(str(p))
             if p.exists():
                 path_process = p
                 break
 
         # Strategy 3: {working}/{job_name}/{job_name}.path → follow the path
         path_file = Path(working) / job_name / (job_name + '.path')
+        tried_paths.append('(path file) ' + str(path_file))
         if path_file.exists():
             try:
                 with open(path_file, 'r', encoding='latin-1') as f:
-                    stored = Path(f.readline().strip())
-                p = stored.parent / 'Process.log'
-                if p.exists():
-                    path_process = p
-                    break
-            except Exception:
-                pass
+                    raw_line = f.readline().strip()
+                tried_paths.append('  .path content: ' + raw_line)
+                # Mirror original: strip drive/UNC prefix, replace with PROXY, strip last dir, add Process.log
+                from pathlib import PurePosixPath
+                slash = raw_line.find('/')
+                if slash >= 0:
+                    my_path = raw_line[slash:]
+                    proxy1 = app.config.get('PROXY_PATH_FOR_PICKLE_1', working)
+                    parts = [x for x in my_path.replace('\\', '/').split('/') if x]
+                    # parts[0] = PBS_CRL.working, parts[1] = job_dir, [2..] = subdirs
+                    # strip last, rebuild under proxy
+                    rebuilt = Path(proxy1)
+                    for part in parts[:-1]:
+                        rebuilt = rebuilt / part
+                    p = rebuilt / 'Process.log'
+                    tried_paths.append('  .path resolved: ' + str(p))
+                    if p.exists():
+                        path_process = p
+                        break
+            except Exception as e:
+                tried_paths.append('  .path error: ' + str(e))
 
         # Strategy 4: walk subdirs of {working}/{job_name} for configPreprocessing
         if config_preprocessing:
@@ -1626,6 +1644,7 @@ def job_report():
                         for d in dirs:
                             if config_preprocessing in d:
                                 p = root_dir / d / 'Process.log'
+                                tried_paths.append(str(p))
                                 if p.exists():
                                     path_process = p
                                 break
@@ -1636,12 +1655,14 @@ def job_report():
             break
 
     if path_process is None or not path_process.exists():
+        app.logger.warning('Process.log not found for %s. Tried: %s | configPreprocessing=%r',
+                           job_name, tried_paths, config_preprocessing)
         return render_template('job_report.html',
                                job_name=job_name,
                                queue_type=queue_type,
                                reqtype=reqtype,
                                reqowner=reqowner,
-                               error='Process.log not found for this job.')
+                               error='Process.log not found. Tried: ' + ' | '.join(tried_paths))
 
     try:
         with open(path_process, 'r', encoding='latin-1') as f:
