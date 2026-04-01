@@ -9,6 +9,31 @@ from pathlib import Path
 
 
 # ──────────────────────────────────────────────
+# Pickle compatibility
+# ──────────────────────────────────────────────
+
+class _PartStub:
+    """Minimal stub that accepts any attribute assignment during unpickling."""
+    def __setstate__(self, state):
+        self.__dict__.update(state)
+
+
+class _CompatUnpickler(pickle.Unpickler):
+    """
+    Map the original ExportTool module classes to local stubs so that
+    dictinfo_pickled.bin can be loaded without cx_Oracle, pyramid, etc.
+    The pickle was created with Part defined in __main__ (or classes_pickle),
+    so we redirect any unknown class to _PartStub.
+    """
+    _KNOWN = {'Part', 'TCPart', 'DocPart'}
+
+    def find_class(self, module, name):
+        if name in self._KNOWN:
+            return _PartStub
+        return super().find_class(module, name)
+
+
+# ──────────────────────────────────────────────
 # Database helpers
 # ──────────────────────────────────────────────
 
@@ -155,9 +180,9 @@ def find_pickle(job_name, pickle_1, pickle_2):
 
 
 def load_pickle(pickle_path):
-    """Load and return the pickle dict, or raise."""
+    """Load and return the pickle dict using the compat unpickler."""
     with open(pickle_path, 'rb') as f:
-        return pickle.load(f)
+        return _CompatUnpickler(f).load()
 
 
 # ──────────────────────────────────────────────
