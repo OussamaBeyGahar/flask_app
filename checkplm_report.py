@@ -195,7 +195,7 @@ def load_pickle(pickle_path):
 _LIST_TO_NOT_DISPLAY = {
     'ZEROCOMPUTEDMASS', 'MISSINGMAT', 'WRONGTREATCORRECTED',
     'NOTRELEASED', 'NOTRELEASED-PROTOTYPE', 'NOT_RELEASED_COMPONENT',
-    'WRONGMAT', 'WRONGTREAT'
+    'WRONGMAT', 'WRONGTREAT', 'PART_DONONTUSE'
 }
 
 _PRIORITY = [
@@ -227,12 +227,12 @@ def process_parts(parts_dict, process, subprocess, conn, language='EN'):
 
             try:
                 errors = part_dict.trace[type_error]
-            except (AttributeError, KeyError):
+            except (AttributeError, KeyError, TypeError):
                 continue
 
             for error_dict in errors:
-                error_id    = error_dict[0]
-                part_number = part_dict.S_PART_NUMBER
+                error_id    = error_dict[0] if isinstance(error_dict, (list, tuple)) and len(error_dict) > 0 else str(error_dict)
+                part_number = getattr(part_dict, 'S_PART_NUMBER', '')
 
                 # Populate category side-tables (mirrors postcode logic)
                 if error_id not in _LIST_TO_NOT_DISPLAY:
@@ -292,28 +292,67 @@ def process_parts(parts_dict, process, subprocess, conn, language='EN'):
     }
 
 
+def _tr(part_id, *cells):
+    """Build a <tr id='...' onclick='parent.jump(this.id)'> row — mirrors POSTCODE HTML."""
+    tds = ''.join(f'<td>{c}</td>' for c in cells)
+    return f"<tr id='{part_id}' onclick='parent.jump(this.id)'>{tds}</tr>"
+
+
+def _pn(obj):
+    """Safely get S_PART_NUMBER from a Part stub (or return str of obj)."""
+    return getattr(obj, 'S_PART_NUMBER', str(obj))
+
+
 def _populate_category(error_id, error_dict,
                         nomass, notag, nomaterial,
                         noreleased, wrongmat, wrongtreat):
-    """Populate filter-button lists based on error_id (mirrors DB POSTCODE logic)."""
-    mapping = {
-        'NOMASS':         nomass,
-        'ZEROCOMPUTEDMASS': nomass,
-        'NOTAG':          notag,
-        'MISSINGMAT':     nomaterial,
-        'NOMATERIAL':     nomaterial,
-        'NOTRELEASED':    noreleased,
-        'NOTRELEASED-PROTOTYPE': noreleased,
-        'NOT_RELEASED_COMPONENT': noreleased,
-        'WRONGMAT':       wrongmat,
-        'WRONGTREAT':     wrongtreat,
-        'WRONGTREATCORRECTED': wrongtreat,
-    }
-    lst = mapping.get(error_id)
-    if lst is not None:
-        val = error_dict[1] if len(error_dict) > 1 else error_id
-        if val not in lst:
-            lst.append(val)
+    """
+    Populate filter-button lists with HTML <tr> strings.
+    Mirrors the DB POSTCODE exec logic exactly:
+      MISSINGMAT  → NOMATERIAL.append(<tr id=pn><td>MAT:pn</td></tr>)
+      NULLTAG     → NOTAG.append(<tr id=pn><td>pn</td><td>pn2</td></tr>)
+      ZEROCOMPUTED→ NOMASS.append(<tr id=pn><td>pn</td></tr>)
+      NOTRELEASED → NORELEASED.append(<tr id=pn><td>pn</td></tr>)
+      WRONGMAT/   → WRONGMAT/TREAT.append(<tr id=pn><td>pn</td><td>val</td></tr>)
+      WRONGTREAT
+    """
+    p1 = _pn(error_dict[1]) if len(error_dict) > 1 else ''
+
+    if error_id in ('MISSINGMAT',):
+        row = _tr(p1, 'MAT:' + p1)
+        if row not in nomaterial:
+            nomaterial.append(row)
+
+    elif error_id in ('NULLTAG',):
+        p2 = _pn(error_dict[2]) if len(error_dict) > 2 else ''
+        row = _tr(p1, p1, p2)
+        if row not in notag:
+            notag.append(row)
+
+    elif error_id in ('ZEROCOMPUTEDMASS',):
+        row = _tr(p1, p1)
+        if row not in nomass:
+            nomass.append(row)
+
+    elif error_id in ('NOTRELEASED', 'NOTRELEASED-PROTOTYPE',
+                      'NOT_RELEASED_COMPONENT', 'OTHER_SITE_RESP_NOTRELEASED'):
+        row = _tr(p1, p1)
+        if row not in noreleased:
+            noreleased.append(row)
+
+    elif error_id in ('WRONGMAT', 'MATMISMATCH'):
+        p2 = _pn(error_dict[2]) if len(error_dict) > 2 else p1
+        val = str(error_dict[3]) if len(error_dict) > 3 else ''
+        row = _tr(p2, p2, val)
+        if row not in wrongmat:
+            wrongmat.append(row)
+
+    elif error_id in ('WRONGTREAT',):
+        p2 = _pn(error_dict[2]) if len(error_dict) > 2 else p1
+        val = str(error_dict[3]) if len(error_dict) > 3 else ''
+        row = _tr(p2, p2, val)
+        if row not in wrongtreat:
+            wrongtreat.append(row)
 
 
 # ──────────────────────────────────────────────
