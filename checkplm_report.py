@@ -20,17 +20,20 @@ class _PartStub:
 
 class _CompatUnpickler(pickle.Unpickler):
     """
-    Map the original ExportTool module classes to local stubs so that
-    dictinfo_pickled.bin can be loaded without cx_Oracle, pyramid, etc.
-    The pickle was created with Part defined in __main__ (or classes_pickle),
-    so we redirect any unknown class to _PartStub.
+    Map all ExportTool classes to _PartStub so dictinfo_pickled.bin loads
+    without cx_Oracle, pyramid, win32net, etc.
+    Classes defined in __main__, classes_pickle, or index are all redirected.
+    Any other unknown class is also stubbed rather than raising AttributeError.
     """
-    _KNOWN = {'Part', 'TCPart', 'DocPart'}
+    _EXPORTTOOL_MODULES = {'__main__', 'classes_pickle', 'index'}
 
     def find_class(self, module, name):
-        if name in self._KNOWN:
+        if module in self._EXPORTTOOL_MODULES:
             return _PartStub
-        return super().find_class(module, name)
+        try:
+            return super().find_class(module, name)
+        except (AttributeError, ModuleNotFoundError):
+            return _PartStub
 
 
 # ──────────────────────────────────────────────
