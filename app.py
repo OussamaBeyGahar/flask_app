@@ -1575,22 +1575,23 @@ def job_report():
     reqtype = job_name
     reqowner = ''
     config_preprocessing = ''
+    tried_paths = []
     job_name_plus = job_name.replace(' ', '+')
     for _spool_candidate in ([job_name] if job_name == job_name_plus else [job_name, job_name_plus]):
         try:
             spool_file = os.path.join(app.config['SHARE_SPOOL'], queue_type, _spool_candidate)
             with open(spool_file, 'r', encoding='latin-1') as f:
                 reqparams = f.readline().split('<>')
-                reqtype            = reqparams[0] if len(reqparams) > 0 else job_name
-                reqowner           = reqparams[1] if len(reqparams) > 1 else ''
-                config_preprocessing = reqparams[2] if len(reqparams) > 2 else ''
+                reqtype            = reqparams[0].strip() if len(reqparams) > 0 else job_name
+                reqowner           = reqparams[1].strip() if len(reqparams) > 1 else ''
+                config_preprocessing = reqparams[2].strip() if len(reqparams) > 2 else ''
+            tried_paths.append(f'(spool OK: {_spool_candidate}, configPreprocessing={config_preprocessing!r})')
             break  # read successfully
-        except Exception:
-            pass
+        except Exception as _e:
+            tried_paths.append(f'(spool FAIL: {_spool_candidate}: {_e})')
 
     # Search for Process.log across working directories and fallback strategies
     path_process = None
-    tried_paths = []
     for working in [app.config.get('SHARE_STANDARD_WORKING', ''),
                     app.config.get('SHARE_ALTERNATE_WORKING', '')]:
         if not working:
