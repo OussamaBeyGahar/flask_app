@@ -15,7 +15,7 @@ class Config:
     SHARE_SPOOL = os.environ.get('SHARE_SPOOL', r'\\nasbobcat\bobcat\data\Spool')
     EXPORT_TOOL_DB = os.environ.get('EXPORT_TOOL_DB', r'c:\projects\ExportTool\database\export_tools.db')
     SHARE_STANDARD_WORKING = os.environ.get('SHARE_STANDARD_WORKING', r'\\nasbobcat\bobcat\data\PBS_CRL.working')
-    SHARE_ALTERNATE_WORKING = os.environ.get('SHARE_ALTERNATE_WORKING', r'\\nasbobcat\bobcat\data\AlternateWorking')
+    SHARE_ALTERNATE_WORKING = os.environ.get('SHARE_ALTERNATE_WORKING', r'\\nasbobcat\bobcat\data\working')
     PROXY_PATH_FOR_PICKLE_1 = os.environ.get('PROXY_PATH_FOR_PICKLE_1', r'\\nasbobcat\bobcat\data')
     PROXY_PATH_FOR_PICKLE_2 = os.environ.get('PROXY_PATH_FOR_PICKLE_2', r'\\nasbobcat\bobcat\data')
     SHARE_DELTA = os.environ.get('SHARE_DELTA', r'\\nasbobcat\bobcat\data\Delta')
