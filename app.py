@@ -1604,11 +1604,17 @@ def job_report():
             break
 
         # Strategy 2: {working}/{configPreprocessing}/Process.log
+        # try both original value and +/space variants (URL encoding differences)
         if config_preprocessing:
-            p = Path(working) / config_preprocessing / 'Process.log'
-            tried_paths.append(str(p))
-            if p.exists():
-                path_process = p
+            for _cp in dict.fromkeys([config_preprocessing,
+                                      config_preprocessing.replace('+', ' '),
+                                      config_preprocessing.replace(' ', '+')]):
+                p = Path(working) / _cp / 'Process.log'
+                tried_paths.append(str(p))
+                if p.exists():
+                    path_process = p
+                    break
+            if path_process:
                 break
 
         # Strategy 3: {working}/{job_name}/{job_name}.path → follow the path
