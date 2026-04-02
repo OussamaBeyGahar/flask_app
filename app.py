@@ -1571,18 +1571,22 @@ def job_report():
         job_name = job_name[:paren]
 
     # Read spool file for request metadata
+    # Flask URL-decodes '+' as space; try both the decoded name and the '+' variant
     reqtype = job_name
     reqowner = ''
     config_preprocessing = ''
-    try:
-        spool_file = os.path.join(app.config['SHARE_SPOOL'], queue_type, job_name)
-        with open(spool_file, 'r', encoding='latin-1') as f:
-            reqparams = f.readline().split('<>')
-            reqtype            = reqparams[0] if len(reqparams) > 0 else job_name
-            reqowner           = reqparams[1] if len(reqparams) > 1 else ''
-            config_preprocessing = reqparams[2] if len(reqparams) > 2 else ''
-    except Exception:
-        pass
+    job_name_plus = job_name.replace(' ', '+')
+    for _spool_candidate in ([job_name] if job_name == job_name_plus else [job_name, job_name_plus]):
+        try:
+            spool_file = os.path.join(app.config['SHARE_SPOOL'], queue_type, _spool_candidate)
+            with open(spool_file, 'r', encoding='latin-1') as f:
+                reqparams = f.readline().split('<>')
+                reqtype            = reqparams[0] if len(reqparams) > 0 else job_name
+                reqowner           = reqparams[1] if len(reqparams) > 1 else ''
+                config_preprocessing = reqparams[2] if len(reqparams) > 2 else ''
+            break  # read successfully
+        except Exception:
+            pass
 
     # Search for Process.log across working directories and fallback strategies
     path_process = None
